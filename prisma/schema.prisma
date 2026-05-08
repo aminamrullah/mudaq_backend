@@ -1,0 +1,1204 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TENANT (PESANTREN)
+// ═══════════════════════════════════════════════════════════════
+model Pesantren {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String   @unique
+  domain    String?  @unique
+  email     String?
+  phone     String?
+  address   String?
+  logo      String?
+  
+  // Xendit / Payment
+  xendit_sub_account_id String?
+  platform_fee          Decimal  @default(0) @db.Decimal(12,2) // Total fee taken by platform (Surcharge + Deduction) for VA/Invoice
+  surcharge_fee         Decimal  @default(0) @db.Decimal(12,2) // Extra amount added to student bill for VA/Invoice
+  qris_platform_fee     Decimal  @default(0) @db.Decimal(12,2) // Total fee taken by platform for QRIS
+  qris_surcharge_fee    Decimal  @default(0) @db.Decimal(12,2) // Extra amount added to student bill for QRIS
+  qris_fee_is_percent   Boolean  @default(false)
+  xendit_status         String   @default("inactive") // active, inactive
+  
+  // Subscription
+  subscription_status   String   @default("trial") // trial, active, suspended, expired
+  trial_duration_days   Int      @default(14)
+  expired_at            DateTime?
+  billing_cycle         String   @default("monthly") // monthly, yearly
+  billing_day           Int      @default(1)
+  billing_type          String   @default("per_student") // per_student, fixed
+  price_per_student     Decimal  @default(0) @db.Decimal(12,2)
+  fixed_billing_amount  Decimal  @default(0) @db.Decimal(12,2)
+  billing_email         String?
+  max_students          Int      @default(500)
+  
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+  deleted_at  DateTime?
+  
+  calendar_type String @default("gregorian") // gregorian, hijri
+
+  // Relations
+  users              User[]
+  students           Student[]
+  teachers           Teacher[]
+  classrooms         Classroom[]
+  dormitories        Dormitory[]
+  subjects           Subject[]
+  academic_years     AcademicYear[]
+  fee_categories     FeeCategory[]
+  bills              Bill[]
+  transactions       Transaction[]
+  wallets            Wallet[]
+  wallet_transactions WalletTransaction[]
+  topup_logs         TopupLog[]
+  attendances        Attendance[]
+  tahfidz_records    TahfidzRecord[]
+  violations         Violation[]
+  health_records     HealthRecord[]
+  permissions_record StudentPermission[]
+  payrolls           Payroll[]
+  payroll_items      PayrollItem[]
+  settings           Setting[]
+  posts              Post[]
+  saas_invoices      SaasInvoice[]
+  usage_logs         UsageLog[]
+  academic_periods   AcademicPeriod[]
+  question_banks     QuestionBank[]
+  exams              Exam[]
+  exam_schedules     ExamSchedule[]
+  exam_results       ExamResult[]
+  report_cards       ReportCard[]
+  donation_disbursements DonationDisbursement[]
+  teacher_attendances TeacherAttendance[]
+  teaching_journals   TeachingJournal[]
+  student_histories   StudentHistory[]
+  daily_assignments   DailyAssignment[]
+  assignment_grades   AssignmentGrade[]
+  expenditures        Expenditure[]
+  user_activities     UserActivity[]
+  problem_tickets     ProblemTicket[]
+
+  @@map("pesantrens")
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  USERS & ROLES
+// ═══════════════════════════════════════════════════════════════
+enum Role {
+  SUPER_ADMIN
+  ADMIN_PESANTREN
+  FINANCE_PESANTREN
+  STAFF_PESANTREN
+  USTAD
+  WALI_SANTRI
+}
+
+model User {
+  id            String    @id @default(uuid()) @db.Uuid
+  tenant_uuid   String?   @db.Uuid
+  name          String
+  email         String?   @unique
+  phone         String?   @unique
+  password      String
+  role          Role      @default(STAFF_PESANTREN)
+  is_active     Boolean   @default(true)
+  base_salary   Decimal   @default(0) @db.Decimal(12,2)
+  last_login_at DateTime?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+  deleted_at    DateTime?
+
+  pesantren     Pesantren?  @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  teacher       Teacher?
+  payroll_items PayrollItem[]
+  refresh_tokens RefreshToken[]
+  notifications UserNotification[]
+  activities    UserActivity[]
+  created_tickets ProblemTicket[] @relation("TicketCreator")
+  ticket_messages ProblemTicketMessage[]
+
+  @@index([tenant_uuid])
+  @@index([email])
+  @@index([phone])
+  @@map("users")
+}
+
+model RefreshToken {
+  id          String   @id @default(uuid()) @db.Uuid
+  user_id     String   @db.Uuid
+  token       String   @unique
+  expires_at  DateTime
+  created_at  DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@map("refresh_tokens")
+}
+
+model UserNotification {
+  id          String   @id @default(uuid()) @db.Uuid
+  user_id     String   @db.Uuid
+  type        String
+  title       String
+  message     String
+  action_data Json?
+  is_read     Boolean  @default(false)
+  created_at  DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@map("user_notifications")
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  ACADEMIC
+// ═══════════════════════════════════════════════════════════════
+model AcademicYear {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_uuid String   @db.Uuid
+  name        String
+  start_date  DateTime
+  end_date    DateTime
+  is_active   Boolean  @default(false)
+  active_term Int      @default(1)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  pesantren  Pesantren  @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  students   Student[]
+  classrooms Classroom[]
+  periods    AcademicPeriod[]
+  exams      Exam[]
+  report_cards ReportCard[]
+
+  @@unique([tenant_uuid, name])
+  @@index([tenant_uuid])
+  @@map("academic_years")
+}
+
+model AcademicPeriod {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenant_uuid      String   @db.Uuid
+  academic_year_id String   @db.Uuid
+  name             String   // Semester Ganjil, Catur Wulan 1, etc.
+  start_date       DateTime
+  end_date         DateTime
+  is_active        Boolean  @default(false)
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  pesantren     Pesantren     @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  academic_year AcademicYear  @relation(fields: [academic_year_id], references: [id], onDelete: Cascade)
+  report_cards  ReportCard[]
+  exams         Exam[]
+
+  @@unique([tenant_uuid, academic_year_id, name])
+  @@index([tenant_uuid])
+  @@map("academic_periods")
+}
+
+model Subject {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_uuid String   @db.Uuid
+  name        String
+  code        String?
+  category    String?  // diniyah, formal, tahfidz
+  kkm         Int      @default(70)
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  pesantren   Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  schedules   Schedule[]
+  question_banks QuestionBank[]
+  exam_schedules ExamSchedule[]
+  report_details ReportCardDetail[]
+  daily_assignments DailyAssignment[]
+
+  @@unique([tenant_uuid, code])
+  @@index([tenant_uuid])
+  @@map("subjects")
+}
+
+model Classroom {
+  id                   String   @id @default(uuid()) @db.Uuid
+  tenant_uuid          String   @db.Uuid
+  name                 String
+  level                String?
+  academic_year_id     String?  @db.Uuid
+  homeroom_teacher_id  String?  @db.Uuid
+  capacity             Int      @default(40)
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+
+  pesantren      Pesantren     @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  academic_year  AcademicYear? @relation(fields: [academic_year_id], references: [id])
+  homeroom       Teacher?      @relation(fields: [homeroom_teacher_id], references: [id])
+  students       Student[]
+  schedules      Schedule[]
+  exam_schedules ExamSchedule[]
+  report_cards   ReportCard[]
+  daily_assignments DailyAssignment[]
+
+  @@unique([tenant_uuid, name, academic_year_id])
+  @@index([tenant_uuid])
+  @@map("classrooms")
+}
+
+model Dormitory {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_uuid String   @db.Uuid
+  name        String
+  mushrif_name String?
+  capacity    Int      @default(100)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  pesantren Pesantren       @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  rooms     DormitoryRoom[]
+  students  Student[]
+
+  @@unique([tenant_uuid, name])
+  @@index([tenant_uuid])
+  @@map("dormitories")
+}
+
+model DormitoryRoom {
+  id           String   @id @default(uuid()) @db.Uuid
+  dormitory_id String   @db.Uuid
+  name         String
+  capacity     Int      @default(10)
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  dormitory Dormitory @relation(fields: [dormitory_id], references: [id], onDelete: Cascade)
+  students  Student[]
+
+  @@map("dormitory_rooms")
+}
+
+model Schedule {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenant_uuid  String   @db.Uuid
+  classroom_id String   @db.Uuid
+  subject_id   String   @db.Uuid
+  teacher_id   String?  @db.Uuid
+  day_of_week  Int      // 0=Sunday, 1=Monday...
+  start_time   String
+  end_time     String
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  classroom   Classroom   @relation(fields: [classroom_id], references: [id], onDelete: Cascade)
+  subject     Subject     @relation(fields: [subject_id], references: [id])
+  teacher     Teacher?    @relation(fields: [teacher_id], references: [id])
+  attendances Attendance[]
+  teacher_attendances TeacherAttendance[]
+  teaching_journals   TeachingJournal[]
+
+  @@index([tenant_uuid])
+  @@map("schedules")
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SANTRI (STUDENT)
+// ═══════════════════════════════════════════════════════════════
+model Student {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenant_uuid      String   @db.Uuid
+  nis              String?
+  nisn             String?
+  nik              String?
+  name             String
+  gender           String?  // L, P
+  birth_place      String?
+  birth_date       DateTime?
+  address          String?
+  photo            String?
+  
+  father_name      String?
+  father_job       String?
+  father_address   String?
+  mother_name      String?
+  mother_job       String?
+  mother_address   String?
+  parent_phone     String?
+  parent_email     String?
+  
+  // Fisik & Pendidikan
+  last_education   String?
+  weight           Int?
+  height           Int?
+
+  // Alamat Detil
+  country          String?  @default("Indonesia")
+  province         String?
+  city             String?
+  district         String?
+  village          String?
+
+  // Dokumen
+  file_kk          String?
+  file_ijazah      String?
+  file_akta        String?
+  file_others      String?
+  
+  academic_year_id    String?  @db.Uuid
+  classroom_id        String?  @db.Uuid
+  dormitory_id        String?  @db.Uuid
+  dormitory_room_id   String?  @db.Uuid
+  tahfidz_teacher_id  String?  @db.Uuid
+  
+  status           String   @default("CALON") // CALON, AKTIF, ALUMNI, BOYONG, KELUAR
+  entry_year       Int?
+  graduation_date  DateTime?
+  rfid             String?
+  fingerprint_id   String?
+  
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+  deleted_at       DateTime?
+
+  pesantren       Pesantren      @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  academic_year   AcademicYear?  @relation(fields: [academic_year_id], references: [id])
+  classroom       Classroom?     @relation(fields: [classroom_id], references: [id])
+  dormitory       Dormitory?     @relation(fields: [dormitory_id], references: [id])
+  dormitory_room  DormitoryRoom? @relation(fields: [dormitory_room_id], references: [id])
+  tahfidz_teacher Teacher?       @relation("TahfidzStudents", fields: [tahfidz_teacher_id], references: [id])
+  
+  wallet           Wallet?
+  bills            Bill[]
+  transactions     Transaction[]
+  attendances      Attendance[]
+  tahfidz_records  TahfidzRecord[]
+  violations       Violation[]
+  health_records   HealthRecord[]
+  student_permissions StudentPermission[]
+  exam_results     ExamResult[]
+  report_cards     ReportCard[]
+  histories        StudentHistory[]
+  assignment_grades AssignmentGrade[]
+
+  @@unique([tenant_uuid, nis])
+  @@index([tenant_uuid])
+  @@index([parent_phone])
+  @@map("students")
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  GURU (TEACHER)
+// ═══════════════════════════════════════════════════════════════
+model Teacher {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_uuid String   @db.Uuid
+  user_id     String?  @unique @db.Uuid
+  nip         String?
+  nik         String?
+  name        String
+  phone       String?
+  address     String?
+  birth_place String?
+  birth_date  DateTime?
+  status      String   @default("active") // active, inactive, resigned
+  stay_type   String?  // mukim, non-mukim
+  photo       String?
+  is_tahfidz_teacher Boolean @default(false)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+  deleted_at  DateTime?
+
+  pesantren       Pesantren     @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  user            User?         @relation(fields: [user_id], references: [id])
+  classrooms      Classroom[]
+  schedules       Schedule[]
+  tahfidz_students Student[]    @relation("TahfidzStudents")
+  payroll_items    PayrollItem[]
+  question_banks   QuestionBank[]
+  exam_paper_schedules   ExamSchedule[] @relation("ExamPaperTeacher")
+  exam_supervisor_schedules ExamSchedule[] @relation("ExamSupervisor")
+  attendances      TeacherAttendance[]
+  teaching_journals TeachingJournal[]
+  daily_assignments DailyAssignment[]
+
+  @@unique([tenant_uuid, nip])
+  @@index([tenant_uuid])
+  @@map("teachers")
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  ATTENDANCE
+// ═══════════════════════════════════════════════════════════════
+model Attendance {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_uuid String   @db.Uuid
+  student_id  String   @db.Uuid
+  schedule_id String?  @db.Uuid
+  date        DateTime @db.Date
+  status      String   // hadir, izin, sakit, alpha
+  check_in    DateTime?
+  check_out   DateTime?
+  notes       String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  pesantren Pesantren  @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  student   Student    @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  schedule  Schedule?  @relation(fields: [schedule_id], references: [id])
+
+  @@unique([student_id, schedule_id, date])
+  @@index([tenant_uuid])
+  @@index([student_id])
+  @@map("attendances")
+}
+
+model TahfidzRecord {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_uuid String   @db.Uuid
+  student_id  String   @db.Uuid
+  teacher_id  String?  @db.Uuid
+  
+  category    String   @default("QURAN") // QURAN, NADHOM
+  
+  // For Quran: Surah Name | For Nadhom: Kitab Name
+  title       String   
+  
+  // For Quran: Ayah | For Nadhom: Bait/Line
+  from        Int?
+  to          Int?
+  juz         Int?     // Specific to Quran
+  
+  type        String?  // setoran, murajaah
+  status      String?  // lancar, tidak_lancar
+  date        DateTime @db.Date
+  notes       String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  student   Student   @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_uuid])
+  @@index([student_id])
+  @@map("tahfidz_records")
+}
+
+model Violation {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_uuid String   @db.Uuid
+  student_id  String   @db.Uuid
+  type        String
+  description String?
+  points      Int      @default(0)
+  date        DateTime @db.Date
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  student   Student   @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_uuid])
+  @@map("violations")
+}
+
+model HealthRecord {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_uuid String   @db.Uuid
+  student_id  String   @db.Uuid
+  type        String
+  description String?
+  treatment   String?
+  date        DateTime @db.Date
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  student   Student   @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_uuid])
+  @@map("health_records")
+}
+
+model StudentPermission {
+  id          String    @id @default(uuid()) @db.Uuid
+  tenant_uuid String    @db.Uuid
+  student_id  String    @db.Uuid
+  type        String    // pulang, sakit, keperluan
+  reason      String?
+  start_date  DateTime  @db.Date
+  end_date    DateTime? @db.Date
+  status      String    @default("pending") // pending, approved, rejected
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+
+  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  student   Student   @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_uuid])
+  @@map("student_permissions")
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  PAYMENT & BILLING
+// ═══════════════════════════════════════════════════════════════
+model FeeCategory {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_uuid String   @db.Uuid
+  name        String
+  type        String   @default("monthly") // monthly, yearly, once
+  amount      Decimal  @db.Decimal(12,2)
+  description String?
+  is_active   Boolean  @default(true)
+  due_day     Int?     @default(10)
+  image_url   String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  bills     Bill[]
+  transactions Transaction[]
+  disbursements DonationDisbursement[]
+
+  @@unique([tenant_uuid, name])
+  @@index([tenant_uuid])
+  @@map("fee_categories")
+}
+
+model Bill {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenant_uuid     String   @db.Uuid
+  student_id      String   @db.Uuid
+  fee_category_id String   @db.Uuid
+  amount          Decimal  @db.Decimal(12,2)
+  amount_paid     Decimal  @default(0) @db.Decimal(12,2)
+  period          String?  // 2026-01, 2026-02, etc
+  due_date        DateTime @db.Date
+  status          String   @default("pending") // pending, partial, paid, overdue
+  notes           String?
+  notified_at     DateTime?
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  pesantren    Pesantren    @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  student      Student      @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  fee_category FeeCategory  @relation(fields: [fee_category_id], references: [id])
+  transactions Transaction[]
+
+  @@unique([student_id, fee_category_id, period])
+  @@index([tenant_uuid])
+  @@index([student_id])
+  @@index([status])
+  @@map("bills")
+}
+
+model Transaction {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenant_uuid     String   @db.Uuid
+  reference_no    String   @unique
+  student_id      String   @db.Uuid
+  bill_id         String?  @db.Uuid
+  fee_category_id String?  @db.Uuid
+  amount_paid     Decimal  @db.Decimal(12,2)
+  payment_date    DateTime @default(now())
+  payment_method  String   @default("cash") // cash, transfer, gateway
+  payment_channel String?
+  xendit_invoice_id String?
+  status          String   @default("pending") // pending, success, failed
+  evidence_url    String?
+  platform_fee    Decimal  @default(0) @db.Decimal(12,2)
+  surcharge_fee   Decimal  @default(0) @db.Decimal(12,2)
+  xendit_fee      Decimal  @default(0) @db.Decimal(12,2)
+  net_amount      Decimal  @default(0) @db.Decimal(12,2)
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  pesantren    Pesantren    @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  student      Student      @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  bill         Bill?        @relation(fields: [bill_id], references: [id])
+  fee_category FeeCategory? @relation(fields: [fee_category_id], references: [id])
+
+  @@index([tenant_uuid])
+  @@index([student_id])
+  @@map("transactions")
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  E-WALLET
+// ═══════════════════════════════════════════════════════════════
+model Wallet {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_uuid String   @db.Uuid
+  student_id  String   @unique @db.Uuid
+  balance     Decimal  @default(0) @db.Decimal(12,2)
+  pin         String?
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  pesantren    Pesantren          @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  student      Student            @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  transactions WalletTransaction[]
+  topup_logs   TopupLog[]
+
+  @@index([tenant_uuid])
+  @@map("wallets")
+}
+
+model WalletTransaction {
+  id             String   @id @default(uuid()) @db.Uuid
+  tenant_uuid    String   @db.Uuid
+  wallet_id      String   @db.Uuid
+  type           String   // deposit, withdrawal, transfer_in, transfer_out, payment
+  amount         Decimal  @db.Decimal(12,2)
+  balance_before Decimal  @db.Decimal(12,2)
+  balance_after  Decimal  @db.Decimal(12,2)
+  reference      String?
+  description    String?
+  created_at     DateTime @default(now())
+
+  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  wallet    Wallet    @relation(fields: [wallet_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_uuid])
+  @@index([wallet_id])
+  @@map("wallet_transactions")
+}
+
+model TopupLog {
+  id          String    @id @default(uuid()) @db.Uuid
+  tenant_uuid String    @db.Uuid
+  wallet_id   String    @db.Uuid
+  external_id String    @unique
+  xendit_id   String?
+  amount      Decimal   @db.Decimal(12,2)
+  status      String    @default("pending") // pending, success, failed, pending_bill
+  notes       String?
+  paid_at     DateTime?
+  platform_fee Decimal   @default(0) @db.Decimal(12,2)
+  surcharge_fee Decimal   @default(0) @db.Decimal(12,2)
+  xendit_fee    Decimal   @default(0) @db.Decimal(12,2)
+  net_amount    Decimal   @default(0) @db.Decimal(12,2)
+  created_at  DateTime  @default(now())
+
+  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  wallet    Wallet    @relation(fields: [wallet_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_uuid])
+  @@map("topup_logs")
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  PAYROLL
+// ═══════════════════════════════════════════════════════════════
+model Payroll {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_uuid String   @db.Uuid
+  period      String   // 2026-01
+  status      String   @default("draft") // draft, approved, paid
+  total_amount Decimal @default(0) @db.Decimal(12,2)
+  approved_by String?  @db.Uuid
+  paid_at     DateTime?
+  notes       String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  pesantren Pesantren     @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  items     PayrollItem[]
+
+  @@unique([tenant_uuid, period])
+  @@index([tenant_uuid])
+  @@map("payrolls")
+}
+
+model PayrollItem {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenant_uuid  String   @db.Uuid
+  payroll_id   String   @db.Uuid
+  user_id      String   @db.Uuid
+  teacher_id   String?  @db.Uuid
+  base_salary  Decimal  @db.Decimal(12,2)
+  allowances   Decimal  @default(0) @db.Decimal(12,2)
+  deductions   Decimal  @default(0) @db.Decimal(12,2)
+  total        Decimal  @db.Decimal(12,2)
+  notes        String?
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  payroll   Payroll   @relation(fields: [payroll_id], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [user_id], references: [id])
+  teacher   Teacher?  @relation(fields: [teacher_id], references: [id])
+
+  @@unique([payroll_id, user_id])
+  @@index([tenant_uuid])
+  @@map("payroll_items")
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  MISC
+// ═══════════════════════════════════════════════════════════════
+model Setting {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_uuid String   @db.Uuid
+  key         String
+  value       String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_uuid, key])
+  @@index([tenant_uuid])
+  @@map("settings")
+}
+
+model Post {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenant_uuid     String   @db.Uuid
+  title           String
+  content         String?  @db.Text
+  image_url       String?
+  video_url       String?  // YouTube, IG, TikTok, etc.
+  type            String   @default("announcement") // announcement, news, event, pengajian, kesantrian
+  is_published    Boolean  @default(false)
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+
+  @@index([tenant_uuid])
+  @@map("posts")
+}
+
+model SaasInvoice {
+  id          String    @id @default(uuid()) @db.Uuid
+  tenant_uuid String    @db.Uuid
+  amount      Decimal   @db.Decimal(12,2)
+  period      String
+  status      String    @default("unpaid") // unpaid, paid, overdue
+  due_date    DateTime  @db.Date
+  paid_at     DateTime?
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+
+  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+
+  @@index([tenant_uuid])
+  @@map("saas_invoices")
+}
+
+model UsageLog {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenant_uuid   String   @db.Uuid
+  date          DateTime @db.Date
+  student_count Int      @default(0)
+  peak_count    Int      @default(0)
+  created_at    DateTime @default(now())
+
+  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_uuid, date])
+  @@index([tenant_uuid])
+  @@map("usage_logs")
+}
+model GlobalConfig {
+  id    String @id @default(uuid()) @db.Uuid
+  key   String @unique
+  value String
+  @@map("global_configs")
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  EXAM & ACADEMIC MANAGEMENT
+// ═══════════════════════════════════════════════════════════════
+model QuestionBank {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_uuid String   @db.Uuid
+  subject_id  String   @db.Uuid
+  teacher_id  String   @db.Uuid
+  title       String
+  description String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  subject   Subject   @relation(fields: [subject_id], references: [id])
+  teacher   Teacher   @relation(fields: [teacher_id], references: [id])
+  questions Question[]
+  exam_schedules ExamSchedule[]
+
+  @@index([tenant_uuid])
+  @@map("question_banks")
+}
+
+model Question {
+  id               String   @id @default(uuid()) @db.Uuid
+  question_bank_id String   @db.Uuid
+  type             String   // multiple_choice, essay
+  content          String   // Question text/HTML
+  options          Json?    // Array of options for multiple choice
+  correct_answer   String?  // The correct option or answer key
+  points           Int      @default(10)
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  question_bank QuestionBank @relation(fields: [question_bank_id], references: [id], onDelete: Cascade)
+  exam_questions ExamQuestion[]
+
+  @@index([question_bank_id])
+  @@map("questions")
+}
+
+model Exam {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenant_uuid      String   @db.Uuid
+  academic_year_id String   @db.Uuid
+  period_id        String?  @db.Uuid
+  name             String   // UTS, UAS, Ulangan Harian, etc.
+  start_date       DateTime
+  end_date         DateTime
+  status           String   @default("draft") // draft, published, ongoing, finished
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  pesantren     Pesantren       @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  academic_year AcademicYear    @relation(fields: [academic_year_id], references: [id])
+  period        AcademicPeriod? @relation(fields: [period_id], references: [id])
+  schedules     ExamSchedule[]
+
+  @@index([tenant_uuid])
+  @@map("exams")
+}
+
+model ExamSchedule {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenant_uuid      String   @db.Uuid
+  exam_id          String   @db.Uuid
+  subject_id       String   @db.Uuid
+  question_bank_id String?  @db.Uuid
+  classroom_id     String   @db.Uuid
+  date             DateTime @db.Date
+  start_time       String
+  end_time         String
+  teacher_id       String?  @db.Uuid // Teacher responsible for the exam paper
+  supervisor_id    String?  @db.Uuid // Teacher guarding the room
+  status           String   @default("pending") // pending, submitted, approved
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  pesantren     Pesantren     @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  exam          Exam          @relation(fields: [exam_id], references: [id], onDelete: Cascade)
+  subject       Subject       @relation(fields: [subject_id], references: [id])
+  question_bank QuestionBank? @relation(fields: [question_bank_id], references: [id])
+  classroom     Classroom     @relation(fields: [classroom_id], references: [id])
+  teacher       Teacher?      @relation("ExamPaperTeacher", fields: [teacher_id], references: [id])
+  supervisor    Teacher?      @relation("ExamSupervisor", fields: [supervisor_id], references: [id])
+  results       ExamResult[]
+  questions     ExamQuestion[]
+
+  @@index([tenant_uuid])
+  @@map("exam_schedules")
+}
+
+model ExamResult {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenant_uuid      String   @db.Uuid
+  exam_schedule_id String   @db.Uuid
+  student_id       String   @db.Uuid
+  score            Decimal  @db.Decimal(5,2)
+  answers          Json?    // Student's answers
+  notes            String?
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  pesantren     Pesantren    @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  exam_schedule ExamSchedule @relation(fields: [exam_schedule_id], references: [id], onDelete: Cascade)
+  student       Student      @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  @@unique([exam_schedule_id, student_id])
+  @@index([tenant_uuid])
+  @@map("exam_results")
+}
+
+model ExamQuestion {
+  id               String   @id @default(uuid()) @db.Uuid
+  exam_schedule_id String   @db.Uuid
+  question_id      String   @db.Uuid
+  order            Int      @default(0)
+
+  exam_schedule    ExamSchedule @relation(fields: [exam_schedule_id], references: [id], onDelete: Cascade)
+  question         Question     @relation(fields: [question_id], references: [id], onDelete: Cascade)
+
+  @@unique([exam_schedule_id, question_id])
+  @@map("exam_questions")
+}
+
+model ReportCard {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenant_uuid      String   @db.Uuid
+  student_id       String   @db.Uuid
+  academic_year_id String   @db.Uuid
+  period_id        String?  @db.Uuid
+  classroom_id     String   @db.Uuid
+  total_score      Decimal? @db.Decimal(8,2)
+  average_score    Decimal? @db.Decimal(5,2)
+  rank             Int?
+  notes_homeroom   String?
+  status           String   @default("draft") // draft, published
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  pesantren     Pesantren       @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  student       Student         @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  academic_year AcademicYear    @relation(fields: [academic_year_id], references: [id])
+  period        AcademicPeriod? @relation(fields: [period_id], references: [id])
+  classroom     Classroom       @relation(fields: [classroom_id], references: [id])
+  details       ReportCardDetail[]
+
+  @@unique([student_id, academic_year_id, period_id])
+  @@index([tenant_uuid])
+  @@map("report_cards")
+}
+
+model ReportCardDetail {
+  id             String   @id @default(uuid()) @db.Uuid
+  report_card_id String   @db.Uuid
+  subject_id     String   @db.Uuid
+  score          Decimal  @db.Decimal(5,2)
+  predicate      String?  // A, B, C, D
+  notes          String?
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  report_card ReportCard @relation(fields: [report_card_id], references: [id], onDelete: Cascade)
+  subject     Subject    @relation(fields: [subject_id], references: [id])
+
+  @@unique([report_card_id, subject_id])
+  @@map("report_card_details")
+}
+
+
+model DonationDisbursement {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenant_uuid     String   @db.Uuid
+  fee_category_id String   @db.Uuid
+  amount          Decimal  @db.Decimal(12,2)
+  disbursement_date DateTime @default(now())
+  recipient       String?
+  description     String?
+  status          String   @default("success") // success, cancelled
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  pesantren    Pesantren    @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  fee_category FeeCategory  @relation(fields: [fee_category_id], references: [id])
+
+  @@index([tenant_uuid])
+  @@map("donation_disbursements")
+}
+
+model TeacherAttendance {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_uuid String   @db.Uuid
+  teacher_id  String   @db.Uuid
+  schedule_id String?  @db.Uuid
+  date        DateTime @db.Date
+  status      String   // hadir, izin, sakit, alpha
+  check_in    DateTime?
+  check_out   DateTime?
+  notes       String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  teacher   Teacher   @relation(fields: [teacher_id], references: [id], onDelete: Cascade)
+  schedule  Schedule? @relation(fields: [schedule_id], references: [id])
+
+  @@unique([teacher_id, schedule_id, date])
+  @@index([tenant_uuid])
+  @@index([teacher_id])
+  @@map("teacher_attendances")
+}
+
+model TeachingJournal {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenant_uuid  String   @db.Uuid
+  teacher_id   String   @db.Uuid
+  schedule_id  String   @db.Uuid
+  date         DateTime @db.Date
+  material     String   
+  student_count Int     @default(0) 
+  notes        String?
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  teacher   Teacher   @relation(fields: [teacher_id], references: [id], onDelete: Cascade)
+  schedule  Schedule  @relation(fields: [schedule_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_uuid])
+  @@index([teacher_id])
+  @@map("teaching_journals")
+}
+
+model Otp {
+  id         String   @id @default(uuid()) @db.Uuid
+  phone      String   @unique
+  otp        String
+  expires_at DateTime
+  created_at DateTime @default(now())
+
+  @@index([phone])
+  @@map("otps")
+}
+
+model StudentHistory {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_uuid String   @db.Uuid
+  student_id  String   @db.Uuid
+  type        String   // STATUS, CLASSROOM, DORMITORY, ROOM
+  from_value  String?
+  to_value    String?
+  notes       String?
+  created_at  DateTime @default(now())
+
+  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  student   Student   @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_uuid])
+  @@index([student_id])
+  @@map("student_history")
+}
+
+
+
+model DailyAssignment {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenant_uuid  String   @db.Uuid
+  teacher_id   String   @db.Uuid
+  subject_id   String   @db.Uuid
+  classroom_id String   @db.Uuid
+  title        String
+  date         DateTime @db.Date
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  teacher   Teacher   @relation(fields: [teacher_id], references: [id])
+  subject   Subject   @relation(fields: [subject_id], references: [id])
+  classroom Classroom @relation(fields: [classroom_id], references: [id])
+  grades    AssignmentGrade[]
+
+  @@index([tenant_uuid])
+  @@map("daily_assignments")
+}
+
+model AssignmentGrade {
+  id                  String   @id @default(uuid()) @db.Uuid
+  tenant_uuid         String   @db.Uuid
+  daily_assignment_id String   @db.Uuid
+  student_id          String   @db.Uuid
+  score               Decimal  @db.Decimal(5,2)
+  notes               String?
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+
+  pesantren        Pesantren       @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  daily_assignment DailyAssignment @relation(fields: [daily_assignment_id], references: [id], onDelete: Cascade)
+  student          Student         @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  @@unique([daily_assignment_id, student_id])
+  @@index([tenant_uuid])
+  @@map("assignment_grades")
+}
+
+model Expenditure {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenant_uuid     String   @db.Uuid
+  title           String
+  amount          Decimal  @db.Decimal(12,2)
+  date            DateTime @default(now())
+  category        String?  // Utilities, Maintenance, Food, Payroll, etc.
+  description     String?
+  payment_method  String   @default("cash") // cash, bank_transfer, etc.
+  attachment_url  String?
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  pesantren       Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+
+  @@index([tenant_uuid])
+  @@map("expenditures")
+}
+
+model UserActivity {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_uuid String?  @db.Uuid
+  user_id     String   @db.Uuid
+  action      String   // LOGIN, LOGOUT, CREATE, UPDATE, DELETE
+  entity      String?  // SANTRI, TEACHER, BILL, etc.
+  entity_id   String?
+  description String?
+  ip_address  String?
+  user_agent  String?
+  location    String?
+  created_at  DateTime @default(now())
+
+  pesantren   Pesantren? @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  user        User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_uuid])
+  @@index([user_id])
+  @@map("user_activities")
+}
+
+model ProblemTicket {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenant_uuid     String   @db.Uuid
+  creator_id      String   @db.Uuid
+  title           String
+  description     String   @db.Text
+  category        String   // general, technical
+  priority        String   @default("medium") // low, medium, high, urgent
+  status          String   @default("open") // open, in_progress, resolved, closed
+  
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+  
+  pesantren       Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  creator         User      @relation("TicketCreator", fields: [creator_id], references: [id])
+  messages        ProblemTicketMessage[]
+
+  @@index([tenant_uuid])
+  @@index([creator_id])
+  @@map("problem_tickets")
+}
+
+model ProblemTicketMessage {
+  id              String   @id @default(uuid()) @db.Uuid
+  ticket_id       String   @db.Uuid
+  sender_id       String   @db.Uuid
+  message         String   @db.Text
+  attachment_url  String?
+  
+  created_at      DateTime @default(now())
+  
+  ticket          ProblemTicket @relation(fields: [ticket_id], references: [id], onDelete: Cascade)
+  sender          User          @relation(fields: [sender_id], references: [id])
+
+  @@index([ticket_id])
+  @@index([sender_id])
+  @@map("problem_ticket_messages")
+}

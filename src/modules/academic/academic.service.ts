@@ -1,0 +1,892 @@
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../../prisma/prisma.service';
+import {
+  CreateAcademicYearDto,
+  UpdateAcademicYearDto,
+  CreateAcademicPeriodDto,
+  UpdateAcademicPeriodDto,
+  CreateClassroomDto,
+  UpdateClassroomDto,
+  CreateSubjectDto,
+  UpdateSubjectDto,
+  CreateScheduleDto,
+  CreateQuestionBankDto,
+  UpdateQuestionBankDto,
+  CreateQuestionDto,
+  UpdateQuestionDto,
+  CreateExamDto,
+  UpdateExamDto,
+  CreateAssignmentDto,
+  UpdateAssignmentDto,
+  CreateExamScheduleDto,
+  UpdateExamScheduleDto,
+  GenerateReportCardDto,
+  UpdateReportCardDto,
+  SaveExamResultDto,
+} from './dto/academic.dto';
+
+@Injectable()
+export class AcademicService {
+  constructor(private prisma: PrismaService) {}
+
+  // ==========================================
+  // Academic Years
+  // ==========================================
+  async getAcademicYears(tenantId: string) {
+    return this.prisma.academicYear.findMany({
+      where: { tenant_uuid: tenantId },
+      include: { periods: true },
+      orderBy: { start_date: 'desc' },
+    });
+  }
+
+  async createAcademicYear(tenantId: string, dto: CreateAcademicYearDto) {
+    return this.prisma.$transaction(async (tx) => {
+      if (dto.is_active) {
+        await tx.academicYear.updateMany({
+          where: { tenant_uuid: tenantId },
+          data: { is_active: false },
+        });
+      }
+      return tx.academicYear.create({
+        data: {
+          tenant_uuid: tenantId,
+          name: dto.name,
+          start_date: new Date(dto.start_date),
+          end_date: new Date(dto.end_date),
+          is_active: dto.is_active || false,
+        },
+      });
+    });
+  }
+
+  async updateAcademicYear(tenantId: string, id: string, dto: UpdateAcademicYearDto) {
+    return this.prisma.$transaction(async (tx) => {
+      if (dto.is_active) {
+        await tx.academicYear.updateMany({
+          where: { tenant_uuid: tenantId },
+          data: { is_active: false },
+        });
+      }
+      const data: any = { ...dto };
+      if (dto.start_date) data.start_date = new Date(dto.start_date);
+      if (dto.end_date) data.end_date = new Date(dto.end_date);
+
+      return tx.academicYear.update({
+        where: { id, tenant_uuid: tenantId },
+        data,
+      });
+    });
+  }
+
+  async deleteAcademicYear(tenantId: string, id: string) {
+    return this.prisma.academicYear.delete({
+      where: { id, tenant_uuid: tenantId },
+    });
+  }
+
+  // ==========================================
+  // Academic Periods
+  // ==========================================
+  async createAcademicPeriod(tenantId: string, yearId: string, dto: CreateAcademicPeriodDto) {
+    return this.prisma.$transaction(async (tx) => {
+      if (dto.is_active) {
+        await tx.academicPeriod.updateMany({
+          where: { tenant_uuid: tenantId },
+          data: { is_active: false },
+        });
+      }
+      return tx.academicPeriod.create({
+        data: {
+          tenant_uuid: tenantId,
+          academic_year_id: yearId,
+          name: dto.name,
+          start_date: new Date(dto.start_date),
+          end_date: new Date(dto.end_date),
+          is_active: dto.is_active || false,
+        },
+      });
+    });
+  }
+
+  async updateAcademicPeriod(tenantId: string, id: string, dto: UpdateAcademicPeriodDto) {
+    return this.prisma.$transaction(async (tx) => {
+      if (dto.is_active) {
+        await tx.academicPeriod.updateMany({
+          where: { tenant_uuid: tenantId },
+          data: { is_active: false },
+        });
+      }
+      const data: any = { ...dto };
+      if (dto.start_date) data.start_date = new Date(dto.start_date);
+      if (dto.end_date) data.end_date = new Date(dto.end_date);
+
+      return tx.academicPeriod.update({
+        where: { id, tenant_uuid: tenantId },
+        data,
+      });
+    });
+  }
+
+  async deleteAcademicPeriod(tenantId: string, id: string) {
+    return this.prisma.academicPeriod.delete({
+      where: { id, tenant_uuid: tenantId },
+    });
+  }
+
+  // ==========================================
+  // Classrooms
+  // ==========================================
+  async getClassrooms(tenantId: string) {
+    return this.prisma.classroom.findMany({
+      where: { tenant_uuid: tenantId },
+      include: { homeroom: true, academic_year: true },
+    });
+  }
+
+  async createClassroom(tenantId: string, dto: CreateClassroomDto) {
+    return this.prisma.classroom.create({
+      data: {
+        tenant_uuid: tenantId,
+        name: dto.name,
+        level: dto.level,
+        academic_year_id: dto.academic_year_id,
+        homeroom_teacher_id: dto.homeroom_teacher_id,
+        capacity: dto.capacity || 40,
+      },
+    });
+  }
+
+  async updateClassroom(tenantId: string, id: string, dto: UpdateClassroomDto) {
+    return this.prisma.classroom.update({
+      where: { id, tenant_uuid: tenantId },
+      data: dto,
+    });
+  }
+
+  async deleteClassroom(tenantId: string, id: string) {
+    return this.prisma.classroom.delete({
+      where: { id, tenant_uuid: tenantId },
+    });
+  }
+
+  // ==========================================
+  // Subjects
+  // ==========================================
+  async getSubjects(tenantId: string) {
+    return this.prisma.subject.findMany({
+      where: { tenant_uuid: tenantId },
+    });
+  }
+
+  async createSubject(tenantId: string, dto: CreateSubjectDto) {
+    return this.prisma.subject.create({
+      data: {
+        tenant_uuid: tenantId,
+        name: dto.name,
+        code: dto.code,
+        category: dto.category,
+        kkm: dto.kkm || 70,
+      },
+    });
+  }
+
+  async updateSubject(tenantId: string, id: string, dto: UpdateSubjectDto) {
+    return this.prisma.subject.update({
+      where: { id, tenant_uuid: tenantId },
+      data: dto,
+    });
+  }
+
+  async deleteSubject(tenantId: string, id: string) {
+    return this.prisma.subject.delete({
+      where: { id, tenant_uuid: tenantId },
+    });
+  }
+
+  // ==========================================
+  // Schedules
+  // ==========================================
+  async getSchedules(tenantId: string, role: string, userId: string, classroomId?: string) {
+    const where: any = { tenant_uuid: tenantId };
+    
+    if (role === 'USTAD') {
+      // Find the teacher profile linked to this user
+      const teacher = await this.prisma.teacher.findFirst({
+        where: { user_id: userId, tenant_uuid: tenantId },
+        include: { classrooms: { select: { id: true } } }
+      });
+
+      if (!teacher) return [];
+
+      const homeroomClassIds = teacher.classrooms.map(c => c.id);
+
+      // Rule: 
+      // 1. If it's my own schedule
+      // 2. OR If I am the homeroom teacher for that class (show all schedules in that class)
+      where.OR = [
+        { teacher_id: teacher.id },
+        { classroom_id: { in: homeroomClassIds } }
+      ];
+    }
+
+    if (classroomId) {
+      if (where.OR) {
+        // If already filtering by OR (Teacher), we need to ensure the classroomId is also respected
+        where.AND = [
+          { classroom_id: classroomId },
+          { OR: where.OR }
+        ];
+        delete where.OR;
+      } else {
+        where.classroom_id = classroomId;
+      }
+    }
+
+    return this.prisma.schedule.findMany({
+      where,
+      include: { subject: true, teacher: true, classroom: true },
+    });
+  }
+
+  async createSchedule(tenantId: string, dto: CreateScheduleDto) {
+    return this.prisma.schedule.create({
+      data: {
+        tenant_uuid: tenantId,
+        classroom_id: dto.classroom_id,
+        subject_id: dto.subject_id,
+        teacher_id: dto.teacher_id,
+        day_of_week: dto.day_of_week,
+        start_time: dto.start_time,
+        end_time: dto.end_time,
+      },
+    });
+  }
+
+  async deleteSchedule(tenantId: string, id: string) {
+    return this.prisma.schedule.delete({
+      where: { id, tenant_uuid: tenantId },
+    });
+  }
+
+  // ==========================================
+  // Question Banks
+  // ==========================================
+  async getQuestionBanks(tenantId: string, role?: string, userId?: string, subjectId?: string) {
+    const where: any = { tenant_uuid: tenantId };
+    
+    if (subjectId) {
+      where.subject_id = subjectId;
+    }
+
+    if (role === 'USTAD') {
+      // Find teacher profile
+      const teacher = await this.prisma.teacher.findFirst({
+        where: { user_id: userId, tenant_uuid: tenantId },
+      });
+
+      if (!teacher) return [];
+
+      // Find subjects this teacher handles
+      const teacherSchedules = await this.prisma.schedule.findMany({
+        where: { teacher_id: teacher.id, tenant_uuid: tenantId },
+        select: { subject_id: true }
+      });
+
+      const handledSubjectIds = [...new Set(teacherSchedules.map(s => s.subject_id))];
+
+      if (subjectId) {
+        // If teacher specifically searched for a subject, check if they handle it
+        if (!handledSubjectIds.includes(subjectId)) {
+          return []; // Not authorized or no results for this specific subject
+        }
+      } else {
+        // Otherwise, filter by all handled subjects
+        where.subject_id = { in: handledSubjectIds };
+      }
+    }
+
+    return this.prisma.questionBank.findMany({
+      where,
+      include: { subject: true, teacher: true, questions: true },
+      orderBy: { created_at: 'desc' },
+    });
+  }
+
+  async createQuestionBank(tenantId: string, dto: CreateQuestionBankDto) {
+    return this.prisma.questionBank.create({
+      data: {
+        tenant_uuid: tenantId,
+        subject_id: dto.subject_id,
+        teacher_id: dto.teacher_id,
+        title: dto.title,
+        description: dto.description,
+      },
+    });
+  }
+
+  async updateQuestionBank(tenantId: string, id: string, dto: UpdateQuestionBankDto) {
+    return this.prisma.questionBank.update({
+      where: { id, tenant_uuid: tenantId },
+      data: dto,
+    });
+  }
+
+  async deleteQuestionBank(tenantId: string, id: string) {
+    return this.prisma.questionBank.delete({
+      where: { id, tenant_uuid: tenantId },
+    });
+  }
+
+  // ==========================================
+  // Questions
+  // ==========================================
+  async getQuestions(bankId: string) {
+    return this.prisma.question.findMany({
+      where: { question_bank_id: bankId },
+      orderBy: { created_at: 'asc' },
+    });
+  }
+
+  async createQuestion(dto: CreateQuestionDto) {
+    return this.prisma.question.create({
+      data: {
+        question_bank_id: dto.question_bank_id,
+        type: dto.type,
+        content: dto.content,
+        options: dto.options,
+        correct_answer: dto.correct_answer,
+        points: dto.points || 10,
+      },
+    });
+  }
+
+  async updateQuestion(id: string, dto: UpdateQuestionDto) {
+    return this.prisma.question.update({
+      where: { id },
+      data: dto,
+    });
+  }
+
+  async deleteQuestion(id: string) {
+    return this.prisma.question.delete({
+      where: { id },
+    });
+  }
+
+  // ==========================================
+  // Exams
+  // ==========================================
+  async getExams(tenantId: string) {
+    return this.prisma.exam.findMany({
+      where: { tenant_uuid: tenantId },
+      include: { academic_year: true, period: true, schedules: true },
+    });
+  }
+
+  async createExam(tenantId: string, dto: CreateExamDto) {
+    return this.prisma.exam.create({
+      data: {
+        tenant_uuid: tenantId,
+        academic_year_id: dto.academic_year_id,
+        period_id: dto.period_id,
+        name: dto.name,
+        start_date: new Date(dto.start_date),
+        end_date: new Date(dto.end_date),
+        status: dto.status || 'draft',
+      },
+    });
+  }
+
+  async updateExam(tenantId: string, id: string, dto: UpdateExamDto) {
+    const data: any = { ...dto };
+    if (dto.start_date) data.start_date = new Date(dto.start_date);
+    if (dto.end_date) data.end_date = new Date(dto.end_date);
+
+    return this.prisma.exam.update({
+      where: { id, tenant_uuid: tenantId },
+      data,
+    });
+  }
+
+  async deleteExam(tenantId: string, id: string) {
+    return this.prisma.exam.delete({
+      where: { id, tenant_uuid: tenantId },
+    });
+  }
+
+  async getQuestionsBySubject(tenantId: string, subjectId: string) {
+    return this.prisma.question.findMany({
+      where: {
+        question_bank: {
+          tenant_uuid: tenantId,
+          subject_id: subjectId
+        }
+      },
+      include: {
+        question_bank: { select: { title: true } }
+      }
+    });
+  }
+
+  // ==========================================
+  // Exam Schedules
+  // ==========================================
+  async getExamSchedules(tenantId: string, role?: string, userId?: string, examId?: string) {
+    const where: any = { tenant_uuid: tenantId };
+    if (examId) where.exam_id = examId;
+
+    if (role === 'USTAD') {
+      const teacher = await this.prisma.teacher.findFirst({
+        where: { user_id: userId, tenant_uuid: tenantId }
+      });
+      if (!teacher) return [];
+      
+      // Teacher can see schedules where they are the author OR the supervisor
+      where.OR = [
+        { teacher_id: teacher.id },
+        { supervisor_id: teacher.id }
+      ];
+    }
+
+    return this.prisma.examSchedule.findMany({
+      where,
+      include: {
+        exam: true,
+        subject: true,
+        classroom: true,
+        teacher: true,
+        supervisor: true,
+        question_bank: true,
+        questions: {
+          include: {
+            question: true
+          }
+        },
+        results: {
+          include: {
+            student: { select: { id: true, name: true, nis: true } }
+          }
+        }
+      },
+      orderBy: { date: 'asc' }
+    });
+  }
+
+  async createExamSchedule(tenantId: string, dto: CreateExamScheduleDto) {
+    return this.prisma.examSchedule.create({
+      data: {
+        tenant_uuid: tenantId,
+        exam_id: dto.exam_id,
+        subject_id: dto.subject_id,
+        classroom_id: dto.classroom_id,
+        date: new Date(dto.date),
+        start_time: dto.start_time,
+        end_time: dto.end_time,
+        teacher_id: dto.teacher_id,
+        supervisor_id: dto.supervisor_id,
+        status: 'pending'
+      }
+    });
+  }
+
+  async updateExamSchedule(tenantId: string, id: string, dto: UpdateExamScheduleDto) {
+    const { question_ids, ...updateData } = dto;
+    const data: any = { ...updateData };
+    if (dto.date) data.date = new Date(dto.date);
+    
+    return this.prisma.$transaction(async (tx) => {
+      const schedule = await tx.examSchedule.update({
+        where: { id, tenant_uuid: tenantId },
+        data
+      });
+
+      if (question_ids) {
+        // Clear old questions and insert new ones
+        await tx.examQuestion.deleteMany({ where: { exam_schedule_id: id } });
+        await tx.examQuestion.createMany({
+          data: question_ids.map((qId, idx) => ({
+            exam_schedule_id: id,
+            question_id: qId,
+            order: idx
+          }))
+        });
+      }
+
+      return schedule;
+    });
+  }
+
+  async deleteExamSchedule(tenantId: string, id: string) {
+    return this.prisma.examSchedule.delete({
+      where: { id, tenant_uuid: tenantId }
+    });
+  }
+
+  async saveExamResults(tenantId: string, scheduleId: string, userId: string, dto: SaveExamResultDto) {
+    const schedule = await this.prisma.examSchedule.findFirst({
+      where: { id: scheduleId, tenant_uuid: tenantId },
+      include: { exam: true }
+    });
+
+    if (!schedule) throw new NotFoundException('Jadwal ujian tidak ditemukan');
+    
+    // Workflow checks:
+    // 1. Must be approved
+    if (schedule.status !== 'approved') {
+       throw new Error('Penilaian hanya bisa dilakukan jika soal sudah di-ACC oleh Admin');
+    }
+    // 2. Exam must not be finished
+    if (schedule.exam.status === 'finished') {
+       throw new Error('Ujian sudah dinyatakan selesai oleh Admin, nilai tidak dapat diubah');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // Clear existing and re-save
+      await tx.examResult.deleteMany({
+        where: { exam_schedule_id: scheduleId, tenant_uuid: tenantId }
+      });
+
+      return tx.examResult.createMany({
+        data: dto.results.map(r => ({
+          tenant_uuid: tenantId,
+          exam_schedule_id: scheduleId,
+          student_id: r.student_id,
+          score: r.score,
+          notes: r.notes
+        }))
+      });
+    });
+  }
+
+  // ==========================================
+  // Report Cards
+  // ==========================================
+
+  async getMyHomeroomClasses(tenantId: string, userId: string) {
+    const teacher = await this.prisma.teacher.findFirst({
+      where: { user_id: userId, tenant_uuid: tenantId }
+    });
+    if (!teacher) return [];
+    
+    return this.prisma.classroom.findMany({
+      where: { homeroom_teacher_id: teacher.id, tenant_uuid: tenantId },
+      include: {
+        academic_year: true
+      }
+    });
+  }
+
+  async getReportCards(tenantId: string, query: GenerateReportCardDto) {
+    return this.prisma.reportCard.findMany({
+      where: {
+        tenant_uuid: tenantId,
+        classroom_id: query.classroom_id,
+        academic_year_id: query.academic_year_id,
+        period_id: query.period_id || null
+      },
+      include: {
+        student: { select: { id: true, name: true, nis: true } },
+        details: {
+          include: { subject: true }
+        }
+      },
+      orderBy: { average_score: 'desc' }
+    });
+  }
+
+  async generateReportCards(tenantId: string, dto: GenerateReportCardDto) {
+    const students = await this.prisma.student.findMany({
+      where: { classroom_id: dto.classroom_id, tenant_uuid: tenantId, status: 'AKTIF', deleted_at: null }
+    });
+
+    const results = await this.prisma.examResult.findMany({
+      where: {
+        tenant_uuid: tenantId,
+        student_id: { in: students.map(s => s.id) },
+        exam_schedule: {
+          classroom_id: dto.classroom_id
+        }
+      },
+      include: {
+        exam_schedule: { select: { subject_id: true } }
+      }
+    });
+
+    for (const student of students) {
+      const studentResults = results.filter(r => r.student_id === student.id);
+      
+      const subjectAverages: Record<string, number[]> = {};
+      studentResults.forEach(r => {
+        const sid = r.exam_schedule.subject_id;
+        if (!subjectAverages[sid]) subjectAverages[sid] = [];
+        subjectAverages[sid].push(Number(r.score));
+      });
+
+      let report = await this.prisma.reportCard.findFirst({
+        where: {
+          student_id: student.id,
+          academic_year_id: dto.academic_year_id,
+          period_id: dto.period_id || null
+        }
+      });
+
+      if (report) {
+        report = await this.prisma.reportCard.update({
+          where: { id: report.id },
+          data: { classroom_id: dto.classroom_id }
+        });
+      } else {
+        report = await this.prisma.reportCard.create({
+          data: {
+            tenant_uuid: tenantId,
+            student_id: student.id,
+            academic_year_id: dto.academic_year_id,
+            period_id: dto.period_id || null,
+            classroom_id: dto.classroom_id,
+            status: 'draft'
+          }
+        });
+      }
+
+      for (const [subjectId, scores] of Object.entries(subjectAverages)) {
+        const avg = (scores as number[]).reduce((a, b) => a + b, 0) / (scores as number[]).length;
+        await this.prisma.reportCardDetail.upsert({
+          where: {
+            report_card_id_subject_id: {
+              report_card_id: report.id,
+              subject_id: subjectId
+            }
+          },
+          create: {
+            report_card_id: report.id,
+            subject_id: subjectId,
+            score: avg,
+            predicate: this.calculatePredicate(avg)
+          },
+          update: {
+            score: avg,
+            predicate: this.calculatePredicate(avg)
+          }
+        });
+      }
+      
+      const allDetails = await this.prisma.reportCardDetail.findMany({ where: { report_card_id: report.id } });
+      const total = allDetails.reduce((a, b) => a + Number(b.score), 0);
+      const avg = allDetails.length > 0 ? total / allDetails.length : 0;
+      
+      await this.prisma.reportCard.update({
+        where: { id: report.id },
+        data: { total_score: total, average_score: avg }
+      });
+    }
+
+    const allReports = await this.prisma.reportCard.findMany({
+      where: {
+        classroom_id: dto.classroom_id,
+        academic_year_id: dto.academic_year_id,
+        period_id: dto.period_id || null
+      },
+      orderBy: { average_score: 'desc' }
+    });
+
+    for (let i = 0; i < allReports.length; i++) {
+      await this.prisma.reportCard.update({
+        where: { id: allReports[i].id },
+        data: { rank: i + 1 }
+      });
+    }
+
+    return this.getReportCards(tenantId, dto);
+  }
+
+  private calculatePredicate(score: number): string {
+    if (score >= 90) return 'A';
+    if (score >= 80) return 'B';
+    if (score >= 70) return 'C';
+    if (score >= 60) return 'D';
+    return 'E';
+  }
+
+  async updateReportCard(tenantId: string, id: string, dto: UpdateReportCardDto) {
+    const { details, ...updateData } = dto;
+    
+    return this.prisma.$transaction(async (tx) => {
+      const report = await tx.reportCard.update({
+        where: { id, tenant_uuid: tenantId },
+        data: updateData
+      });
+
+      if (details) {
+        for (const detail of details) {
+          await tx.reportCardDetail.update({
+            where: { id: detail.id },
+            data: {
+              score: detail.score,
+              notes: detail.notes,
+              predicate: this.calculatePredicate(detail.score)
+            }
+          });
+        }
+        
+        const allDetails = await tx.reportCardDetail.findMany({ where: { report_card_id: id } });
+        const total = allDetails.reduce((a, b) => a + Number(b.score), 0);
+        const avg = allDetails.length > 0 ? total / allDetails.length : 0;
+        
+        await tx.reportCard.update({
+          where: { id },
+          data: { total_score: total, average_score: avg }
+        });
+      }
+
+      return report;
+    });
+  }
+
+  // ==========================================
+  // Classroom Student Management
+  // ==========================================
+  async getStudentsInClass(tenantId: string, classroomId: string) {
+    return this.prisma.student.findMany({
+      where: { tenant_uuid: tenantId, classroom_id: classroomId, status: 'AKTIF', deleted_at: null },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  async getUnassignedStudents(tenantId: string) {
+    return this.prisma.student.findMany({
+      where: { tenant_uuid: tenantId, classroom_id: null, status: 'AKTIF', deleted_at: null },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  async assignStudentsToClass(tenantId: string, classroomId: string, studentIds: string[]) {
+    return this.prisma.student.updateMany({
+      where: { tenant_uuid: tenantId, id: { in: studentIds } },
+      data: { classroom_id: classroomId },
+    });
+  }
+
+  async removeStudentsFromClass(tenantId: string, studentIds: string[]) {
+    return this.prisma.student.updateMany({
+      where: { tenant_uuid: tenantId, id: { in: studentIds } },
+      data: { classroom_id: null },
+    });
+  }
+  // ==========================================
+  // Daily Assignments
+  // ==========================================
+  async getAssignments(tenantId: string, role: string, userId: string) {
+    const where: any = { tenant_uuid: tenantId };
+    
+    if (role === 'USTAD') {
+      const teacher = await this.prisma.teacher.findFirst({
+        where: { user_id: userId, tenant_uuid: tenantId },
+      });
+      if (!teacher) return [];
+      where.teacher_id = teacher.id;
+    }
+
+    return this.prisma.dailyAssignment.findMany({
+      where,
+      include: {
+        subject: { select: { name: true } },
+        classroom: { select: { name: true } },
+        _count: { select: { grades: true } }
+      },
+      orderBy: { date: 'desc' },
+    });
+  }
+
+  async createAssignment(tenantId: string, userId: string, dto: any) {
+    const teacher = await this.prisma.teacher.findFirst({
+      where: { user_id: userId, tenant_uuid: tenantId },
+    });
+    
+    if (!teacher) throw new NotFoundException('Profil guru tidak ditemukan');
+
+    return this.prisma.$transaction(async (tx) => {
+      const assignment = await tx.dailyAssignment.create({
+        data: {
+          tenant_uuid: tenantId,
+          teacher_id: teacher.id,
+          subject_id: dto.subject_id,
+          classroom_id: dto.classroom_id,
+          title: dto.title,
+          date: new Date(dto.date),
+        },
+      });
+
+      if (dto.grades && dto.grades.length > 0) {
+        await tx.assignmentGrade.createMany({
+          data: dto.grades.map((g: any) => ({
+            tenant_uuid: tenantId,
+            daily_assignment_id: assignment.id,
+            student_id: g.student_id,
+            score: g.score,
+            notes: g.notes,
+          })),
+        });
+      }
+
+      return assignment;
+    });
+  }
+
+  async getAssignmentDetail(tenantId: string, id: string) {
+    const assignment = await this.prisma.dailyAssignment.findFirst({
+      where: { id, tenant_uuid: tenantId },
+      include: {
+        subject: true,
+        classroom: true,
+        grades: {
+          include: {
+            student: { select: { id: true, name: true, nis: true } }
+          }
+        }
+      }
+    });
+
+    if (!assignment) throw new NotFoundException('Tugas tidak ditemukan');
+    return assignment;
+  }
+
+  async updateAssignment(tenantId: string, id: string, dto: UpdateAssignmentDto) {
+    return this.prisma.$transaction(async (tx) => {
+      const assignment = await tx.dailyAssignment.update({
+        where: { id, tenant_uuid: tenantId },
+        data: {
+          title: dto.title,
+          date: dto.date ? new Date(dto.date) : undefined,
+          subject_id: dto.subject_id,
+          classroom_id: dto.classroom_id,
+        },
+      });
+
+      if (dto.grades) {
+        // Simple approach: delete existing grades and re-create
+        await tx.assignmentGrade.deleteMany({
+          where: { daily_assignment_id: id, tenant_uuid: tenantId }
+        });
+
+        await tx.assignmentGrade.createMany({
+          data: dto.grades.map((g: any) => ({
+            tenant_uuid: tenantId,
+            daily_assignment_id: assignment.id,
+            student_id: g.student_id,
+            score: g.score,
+            notes: g.notes,
+          })),
+        });
+      }
+
+      return assignment;
+    });
+  }
+
+  async deleteAssignment(tenantId: string, id: string) {
+    return this.prisma.dailyAssignment.delete({
+      where: { id, tenant_uuid: tenantId }
+    });
+  }
+}
