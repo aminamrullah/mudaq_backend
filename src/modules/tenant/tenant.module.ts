@@ -3,10 +3,11 @@ import { TenantService } from './tenant.service';
 import { TenantController } from './tenant.controller';
 import { WebhookController } from './webhook.controller';
 
+import { PublicController } from './public.controller';
 import { XenditService } from './xendit.service';
 
 @Module({
-  controllers: [TenantController, WebhookController],
+  controllers: [TenantController, WebhookController, PublicController],
   providers: [TenantService, XenditService],
   exports: [TenantService],
 })

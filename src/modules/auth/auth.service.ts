@@ -11,6 +11,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LoginDto, RegisterDto, RequestOtpDto, VerifyOtpDto, ResetPasswordDto } from './dto/auth.dto';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
+import { MailService } from '../mail/mail.service';
 import { normalizePhone } from '../../common/utils/phone.util';
 
 @Injectable()
@@ -23,6 +24,7 @@ export class AuthService {
     private jwtService: JwtService,
     private configService: ConfigService,
     private whatsappService: WhatsappService,
+    private mailService: MailService,
   ) {}
 
 
@@ -361,11 +363,13 @@ Berlaku selama 5 menit. Jangan berikan kode ini kepada siapapun.`,
     });
 
     if (dto.email) {
-      // TODO: Integrate with actual Email Service (e.g. Nodemailer/Resend/SendGrid)
-      this.logger.log(`[PASSWORD RESET] OTP for ${dto.email}: ${otp}`);
-      // Since no email service is configured yet, we return success so frontend can continue
-      // In a real scenario, this would send an actual email.
-      return { message: 'Kode reset password telah dikirim ke email Anda' };
+      try {
+        await this.mailService.sendOtp(dto.email, otp);
+        return { message: 'Kode reset password telah dikirim ke email Anda' };
+      } catch (err) {
+        this.logger.error(`Failed to send password reset email to ${dto.email}`, err.stack);
+        throw new UnauthorizedException('Gagal mengirim email reset password. Silakan coba lagi nanti.');
+      }
     } else if (identifier) {
       await this.whatsappService.sendMessage(
         identifier,

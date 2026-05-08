@@ -25,6 +25,7 @@ import { PostModule } from './modules/post/post.module';
 import { WhatsappModule } from './modules/whatsapp/whatsapp.module';
 import { ExpenditureModule } from './modules/expenditure/expenditure.module';
 import { ProblemTicketModule } from './modules/problem-ticket/problem-ticket.module';
+import { MailModule } from './modules/mail/mail.module';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 
@@ -64,6 +65,7 @@ import { APP_GUARD } from '@nestjs/core';
     WhatsappModule,
     ExpenditureModule,
     ProblemTicketModule,
+    MailModule,
   ],
   providers: [
     {
