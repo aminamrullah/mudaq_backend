@@ -25,21 +25,21 @@ export class AuthController {
     res.cookie('access_token', accessToken, {
       httpOnly: true,
       secure: isProduction,
-      sameSite: 'strict',
+      sameSite: isProduction ? 'none' : 'lax',
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
     });
     res.cookie('refresh_token', refreshToken, {
       httpOnly: true,
       secure: isProduction,
-      sameSite: 'strict',
+      sameSite: isProduction ? 'none' : 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
   }
 
   private clearAuthCookies(res: express.Response) {
     const isProduction = process.env.NODE_ENV === 'production';
-    res.cookie('access_token', '', { httpOnly: true, secure: isProduction, sameSite: 'strict', maxAge: 0 });
-    res.cookie('refresh_token', '', { httpOnly: true, secure: isProduction, sameSite: 'strict', maxAge: 0 });
+    res.cookie('access_token', '', { httpOnly: true, secure: isProduction, sameSite: isProduction ? 'none' : 'lax', maxAge: 0 });
+    res.cookie('refresh_token', '', { httpOnly: true, secure: isProduction, sameSite: isProduction ? 'none' : 'lax', maxAge: 0 });
   }
 
   @Post('login')

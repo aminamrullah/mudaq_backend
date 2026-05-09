@@ -7,6 +7,7 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateStudentDto } from '../student/dto/student.dto';
@@ -28,6 +29,7 @@ export class PublicController {
         domain: true,
         address: true,
         phone: true,
+        logo: true,
       },
     });
 
@@ -35,12 +37,17 @@ export class PublicController {
     return pesantren;
   }
 
+  @Throttle({ default: { limit: 3, ttl: 60000 } }) // Maksimal 3 pendaftaran per menit dari IP yang sama
   @Post('pesantren/:slug/register')
   @ApiOperation({ summary: 'Register new student to a pesantren by slug (PPDB)' })
   async registerStudent(
     @Param('slug') slug: string,
     @Body() dto: CreateStudentDto,
   ) {
+    // Validasi format slug: hanya huruf kecil, angka, dan strip
+    if (!/^[a-z0-9-]+$/.test(slug)) {
+      throw new BadRequestException('Format slug tidak valid');
+    }
     const pesantren = await this.prisma.pesantren.findUnique({
       where: { slug },
       select: { id: true, max_students: true },

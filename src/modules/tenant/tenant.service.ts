@@ -22,6 +22,12 @@ export class TenantService {
   ) {}
 
   async create(dto: CreateTenantDto) {
+    if (!dto.slug) {
+      const baseSlug = dto.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
+      const randomStr = Math.random().toString(36).substring(2, 6);
+      dto.slug = `${baseSlug}-${randomStr}`;
+    }
+
     const existing = await this.prisma.pesantren.findUnique({
       where: { slug: dto.slug },
     });
@@ -50,7 +56,12 @@ export class TenantService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      const tenant = await tx.pesantren.create({ data: tenantData });
+      const tenant = await tx.pesantren.create({
+        data: {
+          ...tenantData,
+          slug: dto.slug!,
+        } as any,
+      });
 
       if (admin_email && admin_password) {
         await tx.user.create({

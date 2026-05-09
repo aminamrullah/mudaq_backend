@@ -16,9 +16,9 @@ export class CreateTenantDto {
   name: string;
 
   @ApiProperty({ example: 'darul-hikmah' })
-  @IsNotEmpty()
+  @IsOptional()
   @IsString()
-  slug: string;
+  slug?: string;
 
   @ApiProperty({ required: false })
   @IsOptional()
@@ -123,6 +123,11 @@ export class CreateTenantDto {
   @IsOptional()
   @IsString()
   calendar_type?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  logo?: string;
 }
 
 export class UpdateTenantDto extends PartialType(CreateTenantDto) {
