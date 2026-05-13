@@ -19,8 +19,12 @@ export class DashboardService {
       };
     }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const today = new Date(`${year}-${month}-${day}`);
+
 
     const [
       totalStudents,
@@ -124,7 +128,7 @@ export class DashboardService {
       }),
       this.prisma.pesantren.findUnique({
         where: { id: tenantUuid },
-        select: { max_students: true }
+        select: { max_students: true, slug: true }
       }),
       this.prisma.studentPermission.count({
         where: { tenant_uuid: tenantUuid, status: 'pending' }
@@ -184,6 +188,7 @@ export class DashboardService {
           disbursement: disbursementSum,
         },
       },
+      pesantren_slug: tenantInfo?.slug,
     };
   }
 
@@ -269,8 +274,12 @@ export class DashboardService {
   }
 
   async getTeacherStats(tenantUuid: string, userId: string) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const today = new Date(`${year}-${month}-${day}`);
+
     const dayOfWeek = today.getDay(); // 0=Sun, 1=Mon...
 
     // 1. Get Teacher Profile via User relation

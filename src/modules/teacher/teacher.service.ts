@@ -56,7 +56,7 @@ export class TeacherService {
         where,
         skip: (page - 1) * limit,
         take: limit,
-        include: { user: { select: { email: true, role: true, base_salary: true } } },
+        include: { user: { select: { email: true, phone: true, role: true, base_salary: true } } },
         orderBy: { name: 'asc' },
       }),
       this.prisma.teacher.count({ where }),
@@ -71,8 +71,9 @@ export class TeacherService {
     const teacher = await this.prisma.teacher.findFirst({
       where: { id, tenant_uuid: tenantUuid, deleted_at: null },
       include: {
-        user: { select: { email: true, role: true, base_salary: true } },
+        user: { select: { email: true, phone: true, role: true, base_salary: true } },
         classrooms: { select: { id: true, name: true } },
+        tahfidz_students: { select: { id: true, name: true, nis: true } },
         schedules: {
           include: {
             subject: { select: { name: true } },
@@ -144,10 +145,38 @@ export class TeacherService {
   }
 
   async remove(tenantUuid: string, id: string) {
-    await this.findOne(tenantUuid, id);
-    return this.prisma.teacher.update({
-      where: { id },
-      data: { deleted_at: new Date() },
+    const teacher = await this.findOne(tenantUuid, id);
+    
+    return this.prisma.$transaction(async (tx) => {
+      // Clear tahfidz_teacher_id for students assigned to this teacher
+      await tx.student.updateMany({
+        where: { tenant_uuid: tenantUuid, tahfidz_teacher_id: id },
+        data: { tahfidz_teacher_id: null },
+      });
+
+      const timestamp = Date.now();
+
+      if (teacher.user_id) {
+        await tx.user.update({
+          where: { id: teacher.user_id },
+          data: {
+            deleted_at: new Date(),
+            is_active: false,
+            email: teacher.user?.email ? `${teacher.user.email}_del_${timestamp}` : null,
+            phone: teacher.user?.phone ? `${teacher.user.phone}_del_${timestamp}` : null,
+          }
+        });
+      }
+
+      // Soft delete teacher
+      return tx.teacher.update({
+        where: { id },
+        data: { 
+          deleted_at: new Date(),
+          nip: teacher.nip ? `${teacher.nip}_del_${timestamp}` : null,
+          nik: teacher.nik ? `${teacher.nik}_del_${timestamp}` : null,
+        },
+      });
     });
   }
 
@@ -157,9 +186,39 @@ export class TeacherService {
       include: {
         user: { select: { email: true, role: true, name: true, phone: true } },
         classrooms: { select: { id: true, name: true } },
+        pesantren: { select: { id: true, name: true, address: true, phone: true, logo: true, letterhead: true } },
       },
     });
     if (!teacher) throw new NotFoundException('Profil guru tidak ditemukan');
     return teacher;
+  }
+
+  async assignStudents(tenantUuid: string, teacherId: string, studentIds: string[]) {
+    // Verify teacher exists
+    const teacher = await this.prisma.teacher.findFirst({
+      where: { id: teacherId, tenant_uuid: tenantUuid, deleted_at: null },
+    });
+    if (!teacher) throw new NotFoundException('Guru tidak ditemukan');
+
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Remove current assignments for this teacher
+      await tx.student.updateMany({
+        where: { tenant_uuid: tenantUuid, tahfidz_teacher_id: teacherId },
+        data: { tahfidz_teacher_id: null },
+      });
+
+      // 2. Add new assignments
+      if (studentIds.length > 0) {
+        await tx.student.updateMany({
+          where: { 
+            tenant_uuid: tenantUuid, 
+            id: { in: studentIds } 
+          },
+          data: { tahfidz_teacher_id: teacherId },
+        });
+      }
+      
+      return { success: true, count: studentIds.length };
+    });
   }
 }

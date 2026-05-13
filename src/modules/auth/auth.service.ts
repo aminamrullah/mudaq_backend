@@ -25,7 +25,7 @@ export class AuthService {
     private configService: ConfigService,
     private whatsappService: WhatsappService,
     private mailService: MailService,
-  ) {}
+  ) { }
 
 
   async login(dto: LoginDto, meta?: { ip: string; ua: string }) {
@@ -36,7 +36,16 @@ export class AuthService {
       },
       include: {
         pesantren: {
-          select: { id: true, name: true, subscription_status: true, calendar_type: true, max_students: true },
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            subscription_status: true,
+            expired_at: true,
+            calendar_type: true,
+            max_students: true,
+            can_manage_landing_page: true,
+          },
         },
       },
     });
@@ -104,11 +113,16 @@ export class AuthService {
         role: user.role,
         tenant_uuid: user.tenant_uuid,
         pesantren_name: user.pesantren?.name,
+        pesantren_slug: user.pesantren?.slug,
         max_students: user.pesantren?.max_students || 0,
         calendar_type: user.pesantren?.calendar_type || 'gregorian',
+        can_manage_landing_page: user.pesantren?.can_manage_landing_page || false,
+        subscription_status: user.pesantren?.subscription_status || 'trial',
+        expired_at: user.pesantren?.expired_at,
         is_homeroom: isHomeroom,
         homeroom_classes: homeroomClasses,
         is_tahfidz_teacher: isTahfidzTeacher,
+        koperasi_outlet_id: user.koperasi_outlet_id,
       },
     };
   }
@@ -120,9 +134,9 @@ export class AuthService {
     const legacyPhone = normalizedPhone.startsWith('628') ? '0' + normalizedPhone.slice(2) : cleanPhone;
 
     let user = await this.prisma.user.findFirst({
-      where: { 
+      where: {
         phone: { in: [normalizedPhone, legacyPhone, cleanPhone, dto.phone].filter(Boolean) as string[] },
-        deleted_at: null 
+        deleted_at: null
       },
     });
 
@@ -203,7 +217,17 @@ Berlaku selama 5 menit. Jangan berikan kode ini kepada siapapun.`,
       where: { phone: { in: [normalizedPhone, legacyPhone, cleanPhone, dto.phone] } },
       include: {
         pesantren: {
-          select: { id: true, name: true, subscription_status: true, calendar_type: true, max_students: true },
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            subscription_status: true,
+            expired_at: true,
+            calendar_type: true,
+            max_students: true,
+            can_manage_landing_page: true,
+            logo: true,
+          },
         },
       },
     });
@@ -263,11 +287,17 @@ Berlaku selama 5 menit. Jangan berikan kode ini kepada siapapun.`,
         role: user.role,
         tenant_uuid: user.tenant_uuid,
         pesantren_name: user.pesantren?.name,
+        pesantren_slug: user.pesantren?.slug,
         max_students: user.pesantren?.max_students || 0,
         calendar_type: user.pesantren?.calendar_type || 'gregorian',
+        can_manage_landing_page: user.pesantren?.can_manage_landing_page || false,
+        pesantren_logo: user.pesantren?.logo,
+        subscription_status: user.pesantren?.subscription_status || 'trial',
+        expired_at: user.pesantren?.expired_at,
         is_homeroom: isHomeroom,
         homeroom_classes: homeroomClasses,
         is_tahfidz_teacher: isTahfidzTeacher,
+        koperasi_outlet_id: user.koperasi_outlet_id,
       },
     };
   }
@@ -411,7 +441,7 @@ Berlaku selama 10 menit. Masukkan kode ini di halaman reset password aplikasi MU
     }
 
     const user = await this.prisma.user.findFirst({
-      where: { 
+      where: {
         OR: [
           { phone: identifier },
           { email: identifier }
@@ -436,7 +466,7 @@ Berlaku selama 10 menit. Masukkan kode ini di halaman reset password aplikasi MU
 
   async logout(userId: string, meta?: { ip: string; ua: string }) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    
+
     // Record Activity
     if (user) {
       await this.prisma.userActivity.create({

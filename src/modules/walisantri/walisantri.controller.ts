@@ -16,13 +16,18 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { TenantGuard } from '../../common/guards/tenant.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Role } from '@prisma/client';
+import { KoperasiService } from '../koperasi/koperasi.service';
+import { CheckoutDto } from '../koperasi/dto/koperasi.dto';
 
 @ApiTags('walisantri')
 @Controller('walisantri')
 @UseGuards(AuthGuard('jwt'), RolesGuard, TenantGuard)
 @ApiBearerAuth()
 export class WalisantriController {
-  constructor(private readonly svc: WalisantriService) {}
+  constructor(
+    private readonly svc: WalisantriService,
+    private readonly koperasiSvc: KoperasiService,
+  ) {}
 
   // ── My Children (Students) ──
   @Get('my-students')
@@ -33,6 +38,13 @@ export class WalisantriController {
     @CurrentUser('phone') phone: string,
   ) {
     return this.svc.getMyStudents(t, phone);
+  }
+
+  @Get('profile')
+  @Roles(Role.WALI_SANTRI)
+  @ApiOperation({ summary: 'Get wali profile with pesantren info' })
+  getProfile(@CurrentUser('id') userId: string) {
+    return this.svc.getProfile(userId);
   }
 
   @Get('students/:studentId')
@@ -178,5 +190,65 @@ export class WalisantriController {
   @ApiOperation({ summary: 'Get announcements for this pesantren' })
   getAnnouncements(@CurrentUser('tenant_uuid') t: string) {
     return this.svc.getAnnouncements(t);
+  }
+
+  // ── Koperasi ──
+  @Get('koperasi/products')
+  @Roles(Role.WALI_SANTRI)
+  @ApiOperation({ summary: 'Get products for mobile shopping' })
+  getKoperasiProducts(
+    @CurrentUser('tenant_uuid') t: string,
+    @Query('outlet_id') oid?: string,
+    @Query('category_id') cid?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.koperasiSvc.getProductsForMobile(t, oid, cid, search);
+  }
+
+  @Post('koperasi/checkout')
+  @Roles(Role.WALI_SANTRI)
+  @ApiOperation({ summary: 'Create mobile order' })
+  koperasiCheckout(
+    @CurrentUser('tenant_uuid') t: string,
+    @CurrentUser('id') uid: string,
+    @Body() dto: CheckoutDto,
+  ) {
+    return this.koperasiSvc.mobileCheckout(t, uid, dto);
+  }
+
+  @Get('koperasi/orders')
+  @Roles(Role.WALI_SANTRI)
+  @ApiOperation({ summary: 'Get mobile order history' })
+  async getKoperasiOrders(
+    @CurrentUser('tenant_uuid') t: string,
+    @CurrentUser('phone') phone: string,
+  ) {
+    const myStudents = await this.svc.getMyStudents(t, phone);
+    const studentIds = myStudents.map(s => s.id);
+    return this.koperasiSvc.getMobileOrders(t, studentIds);
+  }
+
+  // ── Spending Limit ──
+  @Put('students/:studentId/spending-limit')
+  @Roles(Role.WALI_SANTRI)
+  @ApiOperation({ summary: 'Set daily/weekly spending limit for student' })
+  setSpendingLimit(
+    @CurrentUser('tenant_uuid') t: string,
+    @CurrentUser('phone') phone: string,
+    @Param('studentId') studentId: string,
+    @Body() body: { daily_limit?: number | null; weekly_limit?: number | null },
+  ) {
+    return this.svc.setSpendingLimit(t, phone, studentId, body);
+  }
+
+  @Get('students/:studentId/spending-summary')
+  @Roles(Role.WALI_SANTRI)
+  @ApiOperation({ summary: 'Get student spending summary (today + week)' })
+  getSpendingSummary(
+    @CurrentUser('tenant_uuid') t: string,
+    @CurrentUser('phone') phone: string,
+    @Param('studentId') studentId: string,
+  ) {
+    return this.svc.getSpendingSummary(t, phone, studentId);
   }
 }

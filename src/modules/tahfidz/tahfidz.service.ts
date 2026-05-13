@@ -7,11 +7,12 @@ export class TahfidzService {
   constructor(private prisma: PrismaService) {}
 
   async getRecords(tenantId: string, filters: any) {
-    const { student_id, category, start_date, end_date } = filters;
+    const { student_id, category, start_date, end_date, tahfidz_teacher_id } = filters;
     const where: any = { tenant_uuid: tenantId };
 
     if (student_id) where.student_id = student_id;
     if (category) where.category = category;
+    if (tahfidz_teacher_id) where.student = { tahfidz_teacher_id };
     if (start_date && end_date) {
       where.date = {
         gte: new Date(start_date),

@@ -19,6 +19,7 @@ import {
   RecordPaymentDto,
   RecordDonationDto,
   RecordDisbursementDto,
+  PayBulkDto,
 } from './dto/billing.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -108,6 +109,16 @@ export class BillingController {
     @Body() dto: { student_id: string; payment_method: string; pin?: string },
   ) {
     return this.svc.payAllBills(t, dto);
+  }
+
+  @Post('pay-bulk')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN, Role.WALI_SANTRI)
+  @ApiOperation({ summary: 'Record bulk payment for selected bills' })
+  payBulk(
+    @CurrentUser('tenant_uuid') t: string,
+    @Body() dto: PayBulkDto,
+  ) {
+    return this.svc.payBulkBills(t, dto);
   }
 
   @Post('donate')

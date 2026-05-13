@@ -62,8 +62,11 @@ export class TenantController {
   @Get('invoices')
   @Roles(Role.SUPER_ADMIN)
   @ApiOperation({ summary: 'Get all SaaS invoices (Super Admin)' })
-  async getAllInvoices() {
-    return this.tenantService.findAllInvoices();
+  async getAllInvoices(
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+  ) {
+    return this.tenantService.findAllInvoices(Number(page) || 1, Number(limit) || 20);
   }
 
   @Put('invoices/:id/status')
@@ -88,8 +91,12 @@ export class TenantController {
   @Get('my-invoices')
   @Roles(Role.ADMIN_PESANTREN)
   @ApiOperation({ summary: 'Get SaaS invoices for current pesantren' })
-  async getMyInvoices(@Request() req: any) {
-    return this.tenantService.findInvoicesByTenant(req.user.tenant_uuid);
+  async getMyInvoices(
+    @Request() req: any,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+  ) {
+    return this.tenantService.findInvoicesByTenant(req.user.tenant_uuid, Number(page) || 1, Number(limit) || 20);
   }
 
   @Get(':id')
@@ -122,8 +129,29 @@ export class TenantController {
   @Roles(Role.ADMIN_PESANTREN)
   @ApiOperation({ summary: 'Update current pesantren settings' })
   async updateSettings(@Request() req: any, @Body() dto: UpdateTenantDto) {
-    // Prevent changing critical fields by non-superadmin if needed
-    // For now, allow it as it's their own pesantren
+    const tenant = await this.tenantService.findOne(req.user.tenant_uuid);
+    
+    // Check if landing page management is allowed for this pesantren
+    if (!tenant.can_manage_landing_page) {
+      // If not allowed, they shouldn't be able to update landing page related fields
+      const lpFields = ['landing_page_template', 'landing_page_config', 'description'];
+      const tryingToUpdateLP = Object.keys(dto).some(key => lpFields.includes(key));
+      
+      if (tryingToUpdateLP) {
+        throw new ForbiddenException(
+          'Anda tidak memiliki izin untuk mengelola landing page. Silakan hubungi Super Admin.',
+        );
+      }
+    }
+
+    // Critical fields that ONLY Superadmin can change
+    const restrictedFields = ['can_manage_landing_page', 'domain', 'slug', 'is_active', 'subscription_status'];
+    restrictedFields.forEach(field => {
+      if (field in dto) {
+        delete (dto as any)[field];
+      }
+    });
+
     return this.tenantService.update(req.user.tenant_uuid, dto);
   }
 
@@ -182,14 +210,51 @@ export class TenantController {
   @Get(':id/activities')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN)
   @ApiOperation({ summary: 'Get activity logs for a pesantren' })
-  async getActivities(@Param('id') id: string) {
-    return this.tenantService.findActivitiesByTenant(id);
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  async getActivities(
+    @Param('id') id: string,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+  ) {
+    return this.tenantService.findActivitiesByTenant(id, Number(page) || 1, Number(limit) || 20);
+  }
+
+  @Get(':id/transactions')
+  @Roles(Role.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Get transaction logs for a pesantren (Super Admin)' })
+  async getTenantTransactions(
+    @Param('id') id: string,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+  ) {
+    // We can reuse BillingService or implement here. For now, use BillingService via injection if possible or just Prisma.
+    // To keep it simple, let's assume we want to see successful topups/payments for this tenant.
+    // I'll add a method to TenantService for this to keep the controller clean.
+    return this.tenantService.findTransactionsByTenant(id, Number(page) || 1, Number(limit) || 20);
+  }
+
+  @Get(':id/invoices')
+  @Roles(Role.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Get SaaS invoices for a specific pesantren (Super Admin)' })
+  async getTenantInvoices(
+    @Param('id') id: string,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+  ) {
+    return this.tenantService.findInvoicesByTenant(id, Number(page) || 1, Number(limit) || 20);
   }
 
   @Get('activities/me')
   @Roles(Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN)
   @ApiOperation({ summary: 'Get activity logs for current pesantren' })
-  async getMyActivities(@Request() req: any) {
-    return this.tenantService.findActivitiesByTenant(req.user.tenant_uuid);
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  async getMyActivities(
+    @Request() req: any, 
+    @Query('page') page?: number,
+    @Query('limit') limit?: number
+  ) {
+    return this.tenantService.findActivitiesByTenant(req.user.tenant_uuid, Number(page) || 1, Number(limit) || 20);
   }
 }

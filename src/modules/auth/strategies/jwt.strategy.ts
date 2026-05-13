@@ -62,8 +62,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       },
     });
 
-    if (!user || !user.is_active) {
-      throw new UnauthorizedException('Akses ditolak');
+    if (!user) {
+      console.log('[JwtStrategy] User not found for sub:', payload.sub);
+      return null;
+    }
+
+    if (!user.is_active) {
+      throw new UnauthorizedException('Akun Anda tidak aktif');
     }
 
     // Check tenant subscription
@@ -71,15 +76,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       if (user.pesantren.subscription_status === 'suspended') {
         throw new UnauthorizedException('Pesantren Anda telah dinonaktifkan');
       }
-      if (
-        user.pesantren.subscription_status === 'expired' ||
-        (user.pesantren.expired_at &&
-          new Date(user.pesantren.expired_at) < new Date())
-      ) {
-        throw new UnauthorizedException(
-          'Langganan pesantren Anda telah berakhir',
-        );
-      }
+      // We no longer block expired accounts at the strategy level
+      // so they can still access Dashboard and Invoices.
+      // The restriction will be handled in the frontend and possibly specific guards.
     }
 
     return {
@@ -90,6 +89,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       role: user.role,
       tenant_uuid: user.tenant_uuid,
       pesantren_name: user.pesantren?.name,
+      subscription_status: user.pesantren?.subscription_status || 'trial',
+      expired_at: user.pesantren?.expired_at,
     };
   }
 }

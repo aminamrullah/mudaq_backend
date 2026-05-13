@@ -11,6 +11,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname, join } from 'path';
+import * as fs from 'fs';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiConsumes, ApiBody, ApiBearerAuth } from '@nestjs/swagger';
 
@@ -25,7 +26,16 @@ export class UploadController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({
-        destination: join(process.cwd(), 'public', 'uploads'),
+        destination: (req: any, file, cb) => {
+          const folder = req.query.folder || '';
+          const uploadPath = join(process.cwd(), 'public', 'uploads', folder);
+          
+          if (!fs.existsSync(uploadPath)) {
+            fs.mkdirSync(uploadPath, { recursive: true });
+          }
+          
+          cb(null, uploadPath);
+        },
         filename: (req, file, cb) => {
           const uniqueSuffix =
             Date.now() + '-' + Math.round(Math.random() * 1e9);
@@ -69,10 +79,13 @@ export class UploadController {
       this.logger.error('Upload failed: No file received');
       throw new BadRequestException('File is required');
     }
-    this.logger.log(`File uploaded: ${file.filename} (${file.size} bytes)`);
+    this.logger.log(`File uploaded: ${file.filename} (${file.size} bytes) in folder: ${request.query.folder || 'root'}`);
+    
+    const folderPath = request.query.folder ? `/${request.query.folder}` : '';
+    
     // Return the URL to the file
     return {
-      url: `/uploads/${file.filename}`,
+      url: `/uploads${folderPath}/${file.filename}`,
       filename: file.filename,
     };
   }

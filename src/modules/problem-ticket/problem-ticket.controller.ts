@@ -26,7 +26,7 @@ export class ProblemTicketController {
 
   @Post()
   @Roles(Role.ADMIN_PESANTREN)
-  @ApiOperation({ summary: 'Create a new problem ticket (Admin Pesantren only)' })
+  @ApiOperation({ summary: 'Create a new problem ticket' })
   create(@Request() req: any, @Body() dto: CreateTicketDto) {
     return this.ticketService.create(req.user.tenant_uuid, req.user.id, dto);
   }

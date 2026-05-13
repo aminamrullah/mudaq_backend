@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
@@ -61,6 +62,7 @@ export class UserService {
           base_salary: true,
           last_login_at: true,
           created_at: true,
+          koperasi_outlet_id: true,
         },
         orderBy: { created_at: 'desc' },
       }),
@@ -86,6 +88,7 @@ export class UserService {
         is_active: true,
         base_salary: true,
         created_at: true,
+        koperasi_outlet_id: true,
       },
     });
     if (!user) throw new NotFoundException('User tidak ditemukan');
@@ -141,11 +144,20 @@ export class UserService {
     });
   }
 
-  async remove(tenantUuid: string, id: string) {
-    await this.findOne(tenantUuid, id);
+  async remove(tenantUuid: string, id: string, requesterRole?: string) {
+    const user = await this.findOne(tenantUuid, id);
+    if (user.role === 'ADMIN_PESANTREN' && requesterRole !== 'SUPER_ADMIN') {
+      throw new BadRequestException('Hanya Superadmin yang diperbolehkan menghapus akun Administrator utama');
+    }
+    const timestamp = Date.now();
     return this.prisma.user.update({
       where: { id },
-      data: { deleted_at: new Date() },
+      data: { 
+        deleted_at: new Date(),
+        is_active: false,
+        phone: user.phone ? `${user.phone}_del_${timestamp}` : null,
+        email: user.email ? `${user.email}_del_${timestamp}` : null,
+      },
     });
   }
 

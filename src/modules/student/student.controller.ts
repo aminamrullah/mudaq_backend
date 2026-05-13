@@ -53,13 +53,14 @@ export class StudentController {
   }
 
   @Get()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN, Role.STAFF_PESANTREN, Role.USTAD)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN, Role.STAFF_PESANTREN, Role.USTAD, Role.KEPALA_KOPERASI, Role.STAF_KOPERASI)
   @ApiOperation({ summary: 'List santri' })
   @ApiQuery({ name: 'search', required: false })
   @ApiQuery({ name: 'status', required: false })
   @ApiQuery({ name: 'classroom_id', required: false })
   @ApiQuery({ name: 'dormitory_id', required: false })
   @ApiQuery({ name: 'dormitory_room_id', required: false })
+  @ApiQuery({ name: 'tahfidz_teacher_id', required: false })
   findAll(
     @CurrentUser('tenant_uuid') t: string,
     @Query('page') p?: number,
@@ -69,12 +70,13 @@ export class StudentController {
     @Query('classroom_id') cid?: string,
     @Query('dormitory_id') did?: string,
     @Query('dormitory_room_id') drid?: string,
+    @Query('tahfidz_teacher_id') ttid?: string,
   ) {
-    return this.studentService.findAll(t, p, l, s, st, cid, did, drid);
+    return this.studentService.findAll(t, p, l, s, st, cid, did, drid, ttid);
   }
 
   @Get(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN, Role.STAFF_PESANTREN, Role.USTAD)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN, Role.STAFF_PESANTREN, Role.USTAD, Role.KEPALA_KOPERASI, Role.STAF_KOPERASI)
   @ApiOperation({ summary: 'Get santri detail' })
   findOne(@CurrentUser('tenant_uuid') t: string, @Param('id') id: string) {
     return this.studentService.findOne(t, id);

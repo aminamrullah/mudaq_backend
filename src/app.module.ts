@@ -26,8 +26,10 @@ import { WhatsappModule } from './modules/whatsapp/whatsapp.module';
 import { ExpenditureModule } from './modules/expenditure/expenditure.module';
 import { ProblemTicketModule } from './modules/problem-ticket/problem-ticket.module';
 import { MailModule } from './modules/mail/mail.module';
+import { KoperasiModule } from './modules/koperasi/koperasi.module';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
+import { PpdbModule } from './modules/ppdb/ppdb.module';
 
 @Module({
   imports: [
@@ -66,6 +68,8 @@ import { APP_GUARD } from '@nestjs/core';
     ExpenditureModule,
     ProblemTicketModule,
     MailModule,
+    KoperasiModule,
+    PpdbModule,
   ],
   providers: [
     {

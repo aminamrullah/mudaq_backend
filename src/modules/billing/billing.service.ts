@@ -14,6 +14,7 @@ import {
   RecordPaymentDto,
   RecordDonationDto,
   RecordDisbursementDto,
+  PayBulkDto,
 } from './dto/billing.dto';
 import { v4 as uuidv4 } from 'uuid';
 import { Prisma } from '@prisma/client';
@@ -26,7 +27,176 @@ export class BillingService {
     private prisma: PrismaService,
     private config: ConfigService,
     private whatsapp: WhatsappService,
-  ) {}
+  ) {
+    this.logger.log('BillingService Initialized');
+  }
+  
+  async payBulkBills(tenantUuid: string, dto: PayBulkDto) {
+    this.logger.log(`Processing payBulkBills v2 for tenant ${tenantUuid}`);
+    if (!dto.bill_ids || dto.bill_ids.length === 0) {
+      throw new BadRequestException('Pilih minimal satu tagihan');
+    }
+
+    const bills = await this.prisma.bill.findMany({
+      where: {
+        id: { in: dto.bill_ids },
+        tenant_uuid: tenantUuid,
+        status: { in: ['pending', 'partial'] },
+      },
+      include: { student: true, fee_category: true },
+    });
+
+    if (bills.length === 0) throw new BadRequestException('Tagihan tidak ditemukan atau sudah lunas');
+
+    const totalAmount = bills.reduce((acc, b) => acc + (Number(b.amount) - Number(b.amount_paid)), 0);
+    const firstBill = bills[0];
+
+    // 1. Payment Gateway Logic
+    if (dto.payment_method === 'payment_gateway') {
+      const externalId = `PAY-BULK-${firstBill.student_id}-${Date.now()}`;
+      const pesantren = await this.prisma.pesantren.findUnique({
+        where: { id: tenantUuid },
+        select: { 
+          xendit_sub_account_id: true, 
+          platform_fee: true, 
+          surcharge_fee: true, 
+          qris_platform_fee: true, 
+          qris_surcharge_fee: true, 
+          qris_fee_is_percent: true 
+        },
+      });
+
+      const xenditKey = this.config.get<string>('XENDIT_SECRET_KEY');
+      let paymentData: any;
+      let surcharge = 0;
+      let platformFeeAmount = 0;
+
+      if (xenditKey) {
+        try {
+          const baseUrl = this.config.get<string>('XENDIT_API_URL', 'https://api.xendit.co');
+          const headers: any = {
+            Authorization: `Basic ${Buffer.from(xenditKey + ':').toString('base64')}`,
+            'Content-Type': 'application/json',
+          };
+
+          if (!pesantren?.xendit_sub_account_id) {
+            throw new BadRequestException('Pesantren belum dikonfigurasi dengan akun pembayaran Xendit.');
+          }
+          headers['for-user-id'] = pesantren.xendit_sub_account_id;
+
+          const isQRIS = dto.payment_channel === 'QRIS';
+          if (isQRIS && pesantren?.qris_fee_is_percent) {
+            surcharge = Math.round(totalAmount * (Number(pesantren.qris_surcharge_fee) / 100));
+            platformFeeAmount = Math.round((totalAmount + surcharge) * (Number(pesantren.qris_platform_fee) / 100));
+          } else {
+            surcharge = isQRIS ? Number(pesantren?.qris_surcharge_fee || 0) : Number(pesantren?.surcharge_fee || 0);
+            platformFeeAmount = isQRIS ? Number(pesantren?.qris_platform_fee || 0) : Number(pesantren?.platform_fee || 0);
+          }
+
+          const finalTotal = totalAmount + surcharge;
+          const feeConfig = platformFeeAmount > 0 ? { fees: [{ type: 'PLATFORM_FEE', value: platformFeeAmount }] } : {};
+
+          const resp = await fetch(`${baseUrl}/v2/invoices`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              external_id: externalId,
+              amount: finalTotal,
+              description: `Pembayaran ${bills.length} Tagihan - ${firstBill.student.name}`,
+              invoice_duration: 3600,
+              currency: 'IDR',
+              payment_methods: dto.payment_channel === 'QRIS' ? ['QRIS'] : undefined,
+              ...feeConfig,
+            }),
+          });
+
+          const data = await resp.json();
+          if (!resp.ok) throw new BadRequestException(`Xendit Error: ${data.message || 'Error'}`);
+          paymentData = { type: 'INVOICE', id: data.id, invoice_url: data.invoice_url, amount: totalAmount, external_id: externalId };
+        } catch (err) {
+          throw new BadRequestException(`Gagal menghubungi Xendit: ${err.message}`);
+        }
+      } else {
+        paymentData = { type: 'INVOICE', id: `demo_${Date.now()}`, invoice_url: `https://checkout.xendit.co/web/demo_${Date.now()}`, external_id: externalId, amount: totalAmount };
+      }
+
+      // Create pending transactions for each bill
+      for (const bill of bills) {
+        const remaining = Number(bill.amount) - Number(bill.amount_paid);
+        await this.prisma.transaction.create({
+          data: {
+            tenant_uuid: tenantUuid,
+            reference_no: `PAY-${bill.id}-${uuidv4().slice(0, 8)}`,
+            student_id: bill.student_id,
+            bill_id: bill.id,
+            fee_category_id: bill.fee_category_id,
+            amount_paid: new Prisma.Decimal(remaining),
+            payment_method: 'payment_gateway',
+            payment_channel: dto.payment_channel || 'Xendit',
+            status: 'pending',
+            xendit_invoice_id: paymentData.id,
+          },
+        });
+      }
+
+      return paymentData;
+    }
+
+    // 2. Wallet (Saldo Santri) Logic
+    return await this.prisma.$transaction(async (tx) => {
+      if (dto.payment_method === 'saldo_santri') {
+        const wallet = await tx.wallet.findUnique({ where: { student_id: firstBill.student_id } });
+        if (!wallet || Number(wallet.balance) < totalAmount) {
+          throw new BadRequestException('Saldo santri tidak mencukupi');
+        }
+        if (!dto.pin) throw new BadRequestException('PIN diperlukan');
+        if (!wallet.pin) throw new BadRequestException('PIN belum diatur');
+        const isValid = await bcrypt.compare(dto.pin, wallet.pin);
+        if (!isValid) throw new BadRequestException('PIN tidak sesuai');
+
+        await tx.wallet.update({
+          where: { id: wallet.id },
+          data: { balance: { decrement: totalAmount } },
+        });
+
+        await tx.walletTransaction.create({
+          data: {
+            tenant_uuid: tenantUuid,
+            wallet_id: wallet.id,
+            type: 'payment',
+            amount: new Prisma.Decimal(totalAmount),
+            balance_before: wallet.balance,
+            balance_after: new Prisma.Decimal(Number(wallet.balance) - totalAmount),
+            reference: `PAY-BULK-${Date.now()}`,
+            description: `Pembayaran ${bills.length} tagihan`,
+          },
+        });
+      }
+
+      for (const bill of bills) {
+        const remaining = Number(bill.amount) - Number(bill.amount_paid);
+        await tx.bill.update({
+          where: { id: bill.id },
+          data: { amount_paid: bill.amount, status: 'paid' },
+        });
+
+        await tx.transaction.create({
+          data: {
+            tenant_uuid: tenantUuid,
+            reference_no: `PAY-${bill.id}-${uuidv4().slice(0, 8)}`,
+            student_id: bill.student_id,
+            bill_id: bill.id,
+            fee_category_id: bill.fee_category_id,
+            amount_paid: new Prisma.Decimal(remaining),
+            payment_method: dto.payment_method,
+            status: 'success',
+          },
+        });
+      }
+
+      return { paid_bills_count: bills.length, total_paid: totalAmount };
+    });
+  }
 
   // ── Fee Category CRUD ──
   async createFeeCategory(tenantUuid: string, dto: CreateFeeCategoryDto) {
@@ -457,9 +627,10 @@ export class BillingService {
         where: { id: tenantUuid },
         select: { xendit_sub_account_id: true, platform_fee: true, surcharge_fee: true, qris_platform_fee: true, qris_surcharge_fee: true, qris_fee_is_percent: true },
       });
-      const student = await this.prisma.student.findUnique({
-        where: { id: dto.student_id },
+      const student = await this.prisma.student.findFirst({
+        where: { id: dto.student_id, tenant_uuid: tenantUuid },
       });
+      if (!student) throw new BadRequestException('Santri tidak valid atau tidak ditemukan');
 
       const xenditKey = this.config.get<string>('XENDIT_SECRET_KEY');
       let paymentData: any;
@@ -588,8 +759,8 @@ export class BillingService {
     return await this.prisma.$transaction(async (tx) => {
       // Handle saldo_santri payment
       if (dto.payment_method === 'saldo_santri') {
-        const wallet = await tx.wallet.findUnique({
-          where: { student_id: dto.student_id },
+        const wallet = await tx.wallet.findFirst({
+          where: { student_id: dto.student_id, tenant_uuid: tenantUuid },
         });
         if (!wallet || Number(wallet.balance) < dto.amount) {
           throw new BadRequestException('Saldo santri tidak mencukupi');
@@ -817,6 +988,8 @@ export class BillingService {
       return { paid_bills_count: bills.length, total_paid: totalAmount };
     });
   }
+
+
 
   async notifyBills(tenantUuid: string, billIds: string[]) {
     const bills = await this.prisma.bill.findMany({

@@ -39,7 +39,10 @@ import {
   UpdateExamScheduleDto,
   GenerateReportCardDto,
   UpdateReportCardDto,
+  SaveReportCardDto,
   SaveExamResultDto,
+  CreateSubjectCategoryDto,
+  UpdateSubjectCategoryDto,
 } from './dto/academic.dto';
 
 @ApiTags('academic')
@@ -122,14 +125,14 @@ export class AcademicController {
   }
 
   @Post('classrooms')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN)
   @ApiOperation({ summary: 'Create classroom' })
   createClassroom(@CurrentUser('tenant_uuid') t: string, @Body() dto: CreateClassroomDto) {
     return this.academicService.createClassroom(t, dto);
   }
 
   @Put('classrooms/:id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN)
   @ApiOperation({ summary: 'Update classroom' })
   updateClassroom(
     @CurrentUser('tenant_uuid') t: string,
@@ -140,7 +143,7 @@ export class AcademicController {
   }
 
   @Delete('classrooms/:id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN)
   @ApiOperation({ summary: 'Delete classroom' })
   deleteClassroom(@CurrentUser('tenant_uuid') t: string, @Param('id') id: string) {
     return this.academicService.deleteClassroom(t, id);
@@ -156,14 +159,14 @@ export class AcademicController {
   }
 
   @Post('subjects')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN)
   @ApiOperation({ summary: 'Create subject' })
   createSubject(@CurrentUser('tenant_uuid') t: string, @Body() dto: CreateSubjectDto) {
     return this.academicService.createSubject(t, dto);
   }
 
   @Put('subjects/:id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN)
   @ApiOperation({ summary: 'Update subject' })
   updateSubject(
     @CurrentUser('tenant_uuid') t: string,
@@ -174,10 +177,44 @@ export class AcademicController {
   }
 
   @Delete('subjects/:id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN)
   @ApiOperation({ summary: 'Delete subject' })
   deleteSubject(@CurrentUser('tenant_uuid') t: string, @Param('id') id: string) {
     return this.academicService.deleteSubject(t, id);
+  }
+
+  // ==========================================
+  // Subject Categories
+  // ==========================================
+  @Get('categories')
+  @ApiOperation({ summary: 'Get subject categories' })
+  getSubjectCategories(@CurrentUser('tenant_uuid') t: string) {
+    return this.academicService.getSubjectCategories(t);
+  }
+
+  @Post('categories')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN)
+  @ApiOperation({ summary: 'Create subject category' })
+  createSubjectCategory(@CurrentUser('tenant_uuid') t: string, @Body() dto: CreateSubjectCategoryDto) {
+    return this.academicService.createSubjectCategory(t, dto);
+  }
+
+  @Put('categories/:id')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN)
+  @ApiOperation({ summary: 'Update subject category' })
+  updateSubjectCategory(
+    @CurrentUser('tenant_uuid') t: string,
+    @Param('id') id: string,
+    @Body() dto: UpdateSubjectCategoryDto
+  ) {
+    return this.academicService.updateSubjectCategory(t, id, dto);
+  }
+
+  @Delete('categories/:id')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN)
+  @ApiOperation({ summary: 'Delete subject category' })
+  deleteSubjectCategory(@CurrentUser('tenant_uuid') t: string, @Param('id') id: string) {
+    return this.academicService.deleteSubjectCategory(t, id);
   }
 
   // ==========================================
@@ -366,9 +403,10 @@ export class AcademicController {
     @CurrentUser('tenant_uuid') t: string,
     @Param('id') id: string,
     @CurrentUser('id') userId: string,
+    @CurrentUser('role') role: string,
     @Body() dto: SaveExamResultDto,
   ) {
-    return this.academicService.saveExamResults(t, id, userId, dto);
+    return this.academicService.saveExamResults(t, id, userId, role, dto);
   }
 
   // ==========================================
@@ -385,6 +423,13 @@ export class AcademicController {
   @ApiOperation({ summary: 'Get report cards for a class' })
   getReportCards(@CurrentUser('tenant_uuid') t: string, @Query() query: GenerateReportCardDto) {
     return this.academicService.getReportCards(t, query);
+  }
+  
+  @Post('report-cards')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.USTAD)
+  @ApiOperation({ summary: 'Save report card manually' })
+  saveReportCard(@CurrentUser('tenant_uuid') t: string, @Body() dto: SaveReportCardDto) {
+    return this.academicService.saveReportCard(t, dto);
   }
 
   @Post('report-cards/generate')
@@ -474,10 +519,12 @@ export class AcademicController {
   @ApiOperation({ summary: 'Update daily assignment and grades' })
   updateAssignment(
     @CurrentUser('tenant_uuid') t: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUser('role') role: string,
     @Param('id') id: string,
     @Body() dto: UpdateAssignmentDto,
   ) {
-    return this.academicService.updateAssignment(t, id, dto);
+    return this.academicService.updateAssignment(t, userId, role, id, dto);
   }
 
   @Delete('assignments/:id')
@@ -485,8 +532,10 @@ export class AcademicController {
   @ApiOperation({ summary: 'Delete daily assignment' })
   deleteAssignment(
     @CurrentUser('tenant_uuid') t: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUser('role') role: string,
     @Param('id') id: string,
   ) {
-    return this.academicService.deleteAssignment(t, id);
+    return this.academicService.deleteAssignment(t, userId, role, id);
   }
 }

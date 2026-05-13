@@ -50,6 +50,17 @@ export class RecordPaymentDto {
   @ApiProperty({ required: false }) @IsOptional() @IsString() payment_channel?: string;
 }
 
+export class PayBulkDto {
+  @ApiProperty() @IsArray() bill_ids: string[];
+  @ApiProperty() @IsNumber() amount: number;
+  @ApiProperty({ enum: ['cash', 'transfer', 'payment_gateway', 'saldo_santri'] })
+  @IsString()
+  payment_method: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() pin?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() notes?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() payment_channel?: string;
+}
+
 export class RecordDonationDto {
   @ApiProperty() @IsNotEmpty() @IsString() student_id: string;
   @ApiProperty() @IsNotEmpty() @IsString() fee_category_id: string; // The donation campaign

@@ -19,7 +19,7 @@ export class TenantService {
     private prisma: PrismaService,
     private xendit: XenditService,
     private globalConfig: GlobalConfigService,
-  ) {}
+  ) { }
 
   async create(dto: CreateTenantDto) {
     if (!dto.slug) {
@@ -38,10 +38,18 @@ export class TenantService {
     // Xendit sub-account is now managed manually by SuperAdmin to avoid spam/unnecessary costs
     // The xendit_sub_account_id should be provided manually in the form if needed.
 
-    // Calculate expired_at if trial
+    // Format date if string YYYY-MM-DD to avoid Prisma error
+    if (tenantData.expired_at === '') {
+      (tenantData as any).expired_at = null;
+    } else if (tenantData.expired_at && typeof tenantData.expired_at === 'string' && tenantData.expired_at.length === 10) {
+      (tenantData as any).expired_at = new Date(`${tenantData.expired_at}T00:00:00Z`);
+    }
+
+    // Calculate expired_at if trial and not provided
     if (
-      tenantData.subscription_status === 'trial' ||
-      !tenantData.subscription_status
+      (tenantData.subscription_status === 'trial' ||
+        !tenantData.subscription_status) &&
+      !tenantData.expired_at
     ) {
       const globalTrialDays = await this.globalConfig.getValue(
         'default_trial_duration_days',
@@ -53,6 +61,18 @@ export class TenantService {
       expiredAt.setDate(expiredAt.getDate() + trialDays);
       (tenantData as any).expired_at = expiredAt;
       (tenantData as any).trial_duration_days = trialDays;
+    }
+
+    // Auto-calculate expired_at when status is active and not provided manually
+    if (tenantData.subscription_status === 'active' && !tenantData.expired_at) {
+      const cycle = tenantData.billing_cycle || 'monthly';
+      const expiredAt = new Date();
+      if (cycle === 'yearly') {
+        expiredAt.setFullYear(expiredAt.getFullYear() + 1);
+      } else {
+        expiredAt.setMonth(expiredAt.getMonth() + 1);
+      }
+      (tenantData as any).expired_at = expiredAt;
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -118,6 +138,8 @@ export class TenantService {
             users: true,
             teachers: true,
             classrooms: true,
+            koperasi_outlets: true,
+            products: true,
           },
         },
         users: {
@@ -148,6 +170,7 @@ export class TenantService {
         },
         saas_invoices: { orderBy: { created_at: 'desc' }, take: 10 },
         usage_logs: { orderBy: { date: 'desc' }, take: 30 },
+        tenant_wallet: true,
       },
     });
 
@@ -159,10 +182,37 @@ export class TenantService {
       _sum: { platform_fee: true },
     });
 
+    // Koperasi Stats
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const [koperasiTotal, koperasi30d] = await Promise.all([
+      this.prisma.posOrder.aggregate({
+        where: { tenant_uuid: id, status: 'completed' },
+        _sum: { total: true },
+        _count: { id: true },
+      }),
+      this.prisma.posOrder.aggregate({
+        where: {
+          tenant_uuid: id,
+          status: 'completed',
+          created_at: { gte: thirtyDaysAgo },
+        },
+        _sum: { total: true },
+        _count: { id: true },
+      }),
+    ]);
+
     return {
       ...tenant,
       revenue_summary: {
         total_platform_fee: topupRevenue._sum.platform_fee || 0,
+      },
+      koperasi_summary: {
+        total_sales: koperasiTotal._sum.total || 0,
+        total_orders: koperasiTotal._count.id || 0,
+        sales_30d: koperasi30d._sum.total || 0,
+        orders_30d: koperasi30d._count.id || 0,
       },
     };
   }
@@ -296,10 +346,10 @@ export class TenantService {
     });
     const paidAt = invoice.paid_at
       ? new Date(invoice.paid_at).toLocaleDateString('id-ID', {
-          day: 'numeric',
-          month: 'long',
-          year: 'numeric',
-        })
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      })
       : null;
 
     return `
@@ -335,7 +385,7 @@ export class TenantService {
           </div>
           <div class="invoice-box">
               <div class="header">
-                  <div class="logo">Pesantren SaaS</div>
+                  <div class="logo">MUDAQ</div>
                   <div class="invoice-info">
                       <div style="font-size: 18px; font-weight: bold;">INVOICE</div>
                       <div>ID: #${invoice.id.substring(0, 8).toUpperCase()}</div>
@@ -369,7 +419,7 @@ export class TenantService {
                   </thead>
                   <tbody>
                       <tr>
-                          <td>Biaya Sewa Penggunaan Aplikasi Pesantren (SaaS)</td>
+                          <td>Biaya Penggunaan Aplikasi Pesantren MUDAQ</td>
                           <td style="text-align: center;">${invoice.period}</td>
                           <td style="text-align: right;">Rp ${amount}</td>
                       </tr>
@@ -406,41 +456,122 @@ export class TenantService {
   }
 
 
-  async findAllInvoices() {
-    return this.prisma.saasInvoice.findMany({
-      include: { pesantren: { select: { name: true } } },
-      orderBy: { created_at: 'desc' },
-    });
+  async findAllInvoices(page = 1, limit = 20) {
+    const [data, total] = await Promise.all([
+      this.prisma.saasInvoice.findMany({
+        include: { pesantren: { select: { name: true } } },
+        orderBy: { created_at: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.saasInvoice.count(),
+    ]);
+
+    return {
+      data,
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    };
   }
 
-  async findInvoicesByTenant(tenantUuid: string) {
-    return this.prisma.saasInvoice.findMany({
-      where: { tenant_uuid: tenantUuid },
-      orderBy: { created_at: 'desc' },
-    });
+  async findInvoicesByTenant(tenantUuid: string, page = 1, limit = 20) {
+    const where = { tenant_uuid: tenantUuid };
+    const [data, total] = await Promise.all([
+      this.prisma.saasInvoice.findMany({
+        where,
+        orderBy: { created_at: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.saasInvoice.count({ where }),
+    ]);
+
+    return {
+      data,
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    };
   }
 
   async update(id: string, dto: UpdateTenantDto) {
-    await this.findOne(id);
-    return this.prisma.pesantren.update({ where: { id }, data: dto });
+    const current = await this.prisma.pesantren.findUnique({ where: { id } });
+    if (!current) throw new NotFoundException('Pesantren tidak ditemukan');
+
+    const data: any = { ...dto };
+
+    // Fix: Handle empty string or invalid date format to avoid Prisma error
+    if (data.expired_at === '') {
+      data.expired_at = null;
+    } else if (data.expired_at && typeof data.expired_at === 'string' && data.expired_at.length === 10) {
+      data.expired_at = new Date(`${data.expired_at}T00:00:00Z`);
+    }
+
+    // Auto-calculate expired_at when status changes to active and not provided manually
+    if (
+      data.subscription_status === 'active' &&
+      current.subscription_status !== 'active' &&
+      !data.expired_at
+    ) {
+      const cycle = data.billing_cycle || current.billing_cycle;
+      const expiredAt = new Date();
+      if (cycle === 'yearly') {
+        expiredAt.setFullYear(expiredAt.getFullYear() + 1);
+      } else {
+        expiredAt.setMonth(expiredAt.getMonth() + 1);
+      }
+      data.expired_at = expiredAt;
+    }
+
+    return this.prisma.pesantren.update({ where: { id }, data });
   }
 
   async remove(id: string) {
-    await this.findOne(id);
+    const tenant = await this.findOne(id);
+    const timestamp = Date.now();
     return this.prisma.pesantren.update({
       where: { id },
-      data: { deleted_at: new Date() },
+      data: { 
+        deleted_at: new Date(),
+        slug: tenant.slug ? `${tenant.slug}-del-${timestamp}` : undefined,
+        domain: tenant.domain ? `${tenant.domain}-del-${timestamp}` : undefined,
+      },
     });
   }
 
-  async findActivitiesByTenant(tenantUuid: string) {
-    return this.prisma.userActivity.findMany({
-      where: { tenant_uuid: tenantUuid },
-      orderBy: { created_at: 'desc' },
-      take: 100,
-      include: {
-        user: { select: { name: true, email: true, role: true } },
-      },
-    });
+  async findActivitiesByTenant(tenantUuid: string, page = 1, limit = 20) {
+    const where = { tenant_uuid: tenantUuid };
+    const [data, total] = await Promise.all([
+      this.prisma.userActivity.findMany({
+        where,
+        orderBy: { created_at: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          user: { select: { name: true, email: true, role: true } },
+        },
+      }),
+      this.prisma.userActivity.count({ where }),
+    ]);
+
+    return {
+      data,
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
+  async findTransactionsByTenant(tenantUuid: string, page = 1, limit = 20) {
+    const where = { tenant_uuid: tenantUuid, status: 'success' };
+    const [data, total] = await Promise.all([
+      this.prisma.topupLog.findMany({
+        where,
+        orderBy: { created_at: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.topupLog.count({ where }),
+    ]);
+
+    return {
+      data,
+      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    };
   }
 }

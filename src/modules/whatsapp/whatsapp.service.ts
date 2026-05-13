@@ -110,7 +110,7 @@ export class WhatsappService implements OnModuleInit {
     const sessionId = tenantUuid || 'system';
     
     try {
-      if (this.statuses.get(sessionId) === 'CONNECTED' || this.statuses.get(sessionId) === 'CONNECTING') {
+      if (this.statuses.get(sessionId) && this.statuses.get(sessionId) !== 'DISCONNECTED') {
         return;
       }
 
@@ -187,6 +187,9 @@ export class WhatsappService implements OnModuleInit {
           
           if (shouldReconnect) {
             setTimeout(() => this.initBaileys(tenantUuid), 10000);
+          } else if (statusCode === DisconnectReason.loggedOut) {
+            this.logger.log(`[WA-${sessionId}] Logged out detected, clearing session folder`);
+            this.logoutBaileys(tenantUuid);
           }
         } else if (connection === 'open') {
           this.logger.log(`[WA-${sessionId}] Connected successfully`);

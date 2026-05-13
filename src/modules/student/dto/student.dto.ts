@@ -55,6 +55,7 @@ export class CreateStudentDto {
   @IsString()
   academic_year_id?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() status?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() tahfidz_teacher_id?: string;
   @ApiProperty({ required: false }) @IsOptional() entry_year?: number;
   @ApiProperty({ required: false }) @IsOptional() @IsDateString() graduation_date?: string;
 

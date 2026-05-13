@@ -94,23 +94,66 @@ export class WalletService {
   }
 
   async createManualTopup(tenantUuid: string, dto: TopupDto) {
+    const pesantren = await this.prisma.pesantren.findUnique({
+      where: { id: tenantUuid },
+      select: { manual_topup_fee: true },
+    });
+
     const wallet = await this.prisma.wallet.findFirst({
       where: { id: dto.wallet_id, tenant_uuid: tenantUuid },
     });
     if (!wallet) throw new NotFoundException('Dompet tidak ditemukan');
 
     const amount = new Prisma.Decimal(dto.amount);
-    const balanceBefore = wallet.balance;
-    const balanceAfter = Prisma.Decimal.add(balanceBefore, amount);
+    const adminFee = pesantren?.manual_topup_fee || new Prisma.Decimal(0);
 
     return this.prisma.$transaction(async (tx) => {
-      // 1. Update wallet balance
+      // 1. Get and check Tenant Wallet
+      let tenantWallet = await tx.tenantWallet.findUnique({
+        where: { tenant_uuid: tenantUuid },
+      });
+      if (!tenantWallet) {
+        tenantWallet = await tx.tenantWallet.create({
+          data: { tenant_uuid: tenantUuid, balance: 0 },
+        });
+      }
+
+      if (Number(tenantWallet.balance) < Number(amount)) {
+        throw new BadRequestException(
+          'Saldo Induk Pesantren tidak mencukupi untuk top up ini. Silakan hubungi Administrator untuk restock Saldo Induk.'
+        );
+      }
+
+      // 2. Deduct Tenant Wallet
+      const tenantBalanceBefore = tenantWallet.balance;
+      const tenantBalanceAfter = Prisma.Decimal.sub(tenantBalanceBefore, amount);
+      await tx.tenantWallet.update({
+        where: { id: tenantWallet.id },
+        data: { balance: tenantBalanceAfter },
+      });
+
+      // 3. Record Tenant Wallet Transaction
+      await tx.tenantWalletTransaction.create({
+        data: {
+          tenant_uuid: tenantUuid,
+          type: 'student_topup',
+          amount: amount,
+          balance_before: tenantBalanceBefore,
+          balance_after: tenantBalanceAfter,
+          reference: `TOPUP-${Date.now()}`,
+          description: `Top up manual ke dompet santri (Wallet ID: ${wallet.id})`,
+        },
+      });
+
+      // 4. Update student wallet balance
+      const balanceBefore = wallet.balance;
+      const balanceAfter = Prisma.Decimal.add(balanceBefore, amount);
       const updated = await tx.wallet.update({
         where: { id: wallet.id },
         data: { balance: balanceAfter },
       });
 
-      // 2. Create transaction record
+      // 5. Create student transaction record
       await tx.walletTransaction.create({
         data: {
           tenant_uuid: tenantUuid,
@@ -120,7 +163,7 @@ export class WalletService {
           balance_before: balanceBefore,
           balance_after: balanceAfter,
           reference: `MANUAL-${Date.now()}`,
-          description: 'Top up tunai oleh Admin',
+          description: `Top up tunai oleh Admin (Biaya Admin: ${adminFee})`,
         },
       });
 
@@ -322,17 +365,28 @@ export class WalletService {
     if (Number(wallet.balance) < dto.amount) throw new BadRequestException('Saldo tidak mencukupi');
 
     const amount = new Prisma.Decimal(dto.amount);
-    const balanceBefore = wallet.balance;
-    const balanceAfter = Prisma.Decimal.sub(balanceBefore, amount);
 
     return this.prisma.$transaction(async (tx) => {
-      // 1. Update wallet balance
+      // 1. Get or Create Tenant Wallet
+      let tenantWallet = await tx.tenantWallet.findUnique({
+        where: { tenant_uuid: tenantUuid },
+      });
+      if (!tenantWallet) {
+        tenantWallet = await tx.tenantWallet.create({
+          data: { tenant_uuid: tenantUuid, balance: 0 },
+        });
+      }
+
+      const balanceBefore = wallet.balance;
+      const balanceAfter = Prisma.Decimal.sub(balanceBefore, amount);
+
+      // 2. Update student wallet balance
       const updated = await tx.wallet.update({
         where: { id: wallet.id },
         data: { balance: balanceAfter },
       });
 
-      // 2. Create transaction record
+      // 3. Create student transaction record
       await tx.walletTransaction.create({
         data: {
           tenant_uuid: tenantUuid,
@@ -343,6 +397,27 @@ export class WalletService {
           balance_after: balanceAfter,
           reference: `WD-${Date.now()}`,
           description: dto.notes || 'Tarik tunai oleh Admin',
+        },
+      });
+
+      // 4. Add to Tenant Wallet
+      const tenantBalanceBefore = tenantWallet.balance;
+      const tenantBalanceAfter = Prisma.Decimal.add(tenantBalanceBefore, amount);
+      await tx.tenantWallet.update({
+        where: { id: tenantWallet.id },
+        data: { balance: tenantBalanceAfter },
+      });
+
+      // 5. Record Tenant Wallet Transaction
+      await tx.tenantWalletTransaction.create({
+        data: {
+          tenant_uuid: tenantUuid,
+          type: 'student_withdraw',
+          amount: amount,
+          balance_before: tenantBalanceBefore,
+          balance_after: tenantBalanceAfter,
+          reference: `WD-${Date.now()}`,
+          description: `Tarik tunai dari dompet santri (Wallet ID: ${wallet.id})`,
         },
       });
 
@@ -418,5 +493,78 @@ export class WalletService {
       message: 'Transfer berhasil',
       new_balance: fromBefore - dto.amount,
     };
+  }
+
+  async getTenantWallet(tenantUuid: string) {
+    let wallet = await this.prisma.tenantWallet.findUnique({
+      where: { tenant_uuid: tenantUuid },
+    });
+    if (!wallet) {
+      wallet = await this.prisma.tenantWallet.create({
+        data: { tenant_uuid: tenantUuid, balance: 0 },
+      });
+    }
+    return wallet;
+  }
+
+  async topupTenantWallet(tenantUuid: string, dto: { amount: number; description?: string }) {
+    const amount = new Prisma.Decimal(dto.amount);
+    return this.prisma.$transaction(async (tx) => {
+      let wallet = await tx.tenantWallet.findUnique({ where: { tenant_uuid: tenantUuid } });
+      if (!wallet) {
+        wallet = await tx.tenantWallet.create({ data: { tenant_uuid: tenantUuid, balance: 0 } });
+      }
+      const balanceBefore = wallet.balance;
+      const balanceAfter = Prisma.Decimal.add(balanceBefore, amount);
+
+      const updated = await tx.tenantWallet.update({
+        where: { id: wallet.id },
+        data: { balance: balanceAfter },
+      });
+
+      await tx.tenantWalletTransaction.create({
+        data: {
+          tenant_uuid: tenantUuid,
+          type: 'deposit_from_superadmin',
+          amount: amount,
+          balance_before: balanceBefore,
+          balance_after: balanceAfter,
+          reference: `SA-TOPUP-${Date.now()}`,
+          description: dto.description || 'Top up Saldo Induk oleh Superadmin',
+        },
+      });
+      return updated;
+    });
+  }
+
+  async withdrawTenantWallet(tenantUuid: string, dto: { amount: number; description?: string }) {
+    const amount = new Prisma.Decimal(dto.amount);
+    return this.prisma.$transaction(async (tx) => {
+      const wallet = await tx.tenantWallet.findUnique({ where: { tenant_uuid: tenantUuid } });
+      if (!wallet || Number(wallet.balance) < Number(amount)) {
+        throw new BadRequestException('Saldo Induk tidak mencukupi');
+      }
+      
+      const balanceBefore = wallet.balance;
+      const balanceAfter = Prisma.Decimal.sub(balanceBefore, amount);
+
+      const updated = await tx.tenantWallet.update({
+        where: { id: wallet.id },
+        data: { balance: balanceAfter },
+      });
+
+      await tx.tenantWalletTransaction.create({
+        data: {
+          tenant_uuid: tenantUuid,
+          type: 'withdraw_to_superadmin',
+          amount: amount,
+          balance_before: balanceBefore,
+          balance_after: balanceAfter,
+          reference: `SA-WD-${Date.now()}`,
+          description: dto.description || 'Penarikan Saldo Induk oleh Superadmin',
+        },
+      });
+      return updated;
+    });
   }
 }

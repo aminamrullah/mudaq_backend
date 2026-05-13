@@ -151,82 +151,87 @@ export class WebhookController {
   }
 
   private async handleBillPaymentPaid(externalId: string, body: any) {
-    const transaction = await this.prisma.transaction.findUnique({
-      where: { reference_no: externalId },
-      include: { bill: { include: { fee_category: true, student: true } } },
-    });
+    let transactions: any[] = [];
 
-    if (!transaction || !transaction.bill || transaction.status === 'success') {
-      this.logger.log(`Bill transaction for ${externalId} not found, has no bill, or already success`);
+    if (externalId.startsWith('PAY-BULK-')) {
+      transactions = await this.prisma.transaction.findMany({
+        where: { xendit_invoice_id: body.id },
+        include: { bill: { include: { fee_category: true, student: true } } },
+      });
+    } else {
+      const singleTx = await this.prisma.transaction.findUnique({
+        where: { reference_no: externalId },
+        include: { bill: { include: { fee_category: true, student: true } } },
+      });
+      if (singleTx) transactions = [singleTx];
+    }
+
+    if (transactions.length === 0) {
+      this.logger.log(`No pending bill transactions found for ${externalId} / invoice ${body.id}`);
       return;
     }
 
-    const bill = transaction.bill;
+    for (const transaction of transactions) {
+      if (!transaction.bill || transaction.status === 'success') continue;
+      const bill = transaction.bill;
 
-    await this.prisma.$transaction(async (tx) => {
-      const surcharge = Number(transaction.surcharge_fee || 0);
-      const platformFee = Number(transaction.platform_fee || 0);
-      const grossAmount = Number(body.amount || body.paid_amount || 0);
-      
-      // Xendit MDR Estimation
-      let xenditFee = 0;
-      const channel = (body.payment_channel || transaction.payment_channel || '').toUpperCase();
-      if (channel.includes('QRIS') || channel.includes('QR_CODE')) {
-        xenditFee = Math.round(grossAmount * 0.007 * 1.11);
-      } else {
-        xenditFee = 4500 * 1.11;
-      }
-      
-      const netAmount = Math.max(0, grossAmount - platformFee - xenditFee);
-      const billReductionAmount = Math.max(0, grossAmount - surcharge); // Amount that reduces the bill
-      
-      const newPaid = Number(bill.amount_paid) + billReductionAmount;
-      const newStatus = newPaid >= Number(bill.amount) ? 'paid' : 'partial';
-
-      // 1. Update Bill
-      await tx.bill.update({
-        where: { id: bill.id },
-        data: {
-          amount_paid: new Prisma.Decimal(newPaid),
-          status: newStatus,
-        },
-      });
-
-      // 2. Update Transaction
-      await tx.transaction.update({
-        where: { id: transaction.id },
-        data: {
-          // Use billReductionAmount (which is gross - surcharge) so that the transaction reports the original bill amount
-          amount_paid: new Prisma.Decimal(billReductionAmount),
-          payment_method: body.payment_method || 'payment_gateway',
-          payment_channel: body.payment_channel || 'Xendit',
-          xendit_invoice_id: body.id,
-          status: 'success',
-          platform_fee: new Prisma.Decimal(body.fees?.find((f: any) => f.type === 'PLATFORM_FEE')?.value || transaction.platform_fee || 0),
-          xendit_fee: new Prisma.Decimal(xenditFee),
-          net_amount: new Prisma.Decimal(netAmount),
-        },
-      });
-
-      // 3. Send Notification
-      if (bill.student.parent_phone) {
-        const user = await tx.user.findFirst({
-          where: { phone: bill.student.parent_phone },
-        });
-        if (user) {
-          await tx.userNotification.create({
-            data: {
-              user_id: user.id,
-              type: 'BILL',
-              title: 'Pembayaran Tagihan Berhasil',
-              message: `Pembayaran tagihan ${bill.fee_category.name} untuk ananda ${bill.student.name} sebesar Rp${billReductionAmount} telah berhasil.`,
-              action_data: { bill_id: bill.id },
-            },
-          });
+      await this.prisma.$transaction(async (tx) => {
+        const surcharge = Number(transaction.surcharge_fee || 0);
+        const platformFee = Number(transaction.platform_fee || 0);
+        // For bulk payments, we use the transaction's own amount_paid (which was set during creation)
+        // instead of the total body.amount (which is the sum of all bills)
+        const billReductionAmount = Number(transaction.amount_paid); 
+        
+        // MDR estimation (just for logging/accounting)
+        let xenditFee = 0;
+        const channel = (body.payment_channel || transaction.payment_channel || '').toUpperCase();
+        if (channel.includes('QRIS') || channel.includes('QR_CODE')) {
+          xenditFee = Math.round(billReductionAmount * 0.007 * 1.11);
+        } else {
+          xenditFee = transactions.length > 1 ? (4500 * 1.11) / transactions.length : (4500 * 1.11);
         }
-      }
-    });
-    this.logger.log(`Successfully processed Bill Payment ${externalId}`);
+        
+        const netAmount = Math.max(0, billReductionAmount - platformFee - xenditFee);
+        const newPaid = Number(bill.amount_paid) + billReductionAmount;
+        const newStatus = newPaid >= Number(bill.amount) ? 'paid' : 'partial';
+
+        // 1. Update Bill
+        await tx.bill.update({
+          where: { id: bill.id },
+          data: { amount_paid: new Prisma.Decimal(newPaid), status: newStatus },
+        });
+
+        // 2. Update Transaction
+        await tx.transaction.update({
+          where: { id: transaction.id },
+          data: {
+            status: 'success',
+            payment_method: body.payment_method || 'payment_gateway',
+            payment_channel: body.payment_channel || 'Xendit',
+            xendit_invoice_id: body.id,
+            xendit_fee: new Prisma.Decimal(xenditFee),
+            net_amount: new Prisma.Decimal(netAmount),
+          },
+        });
+
+        // 3. Send Notification
+        if (bill.student.parent_phone) {
+          const user = await tx.user.findFirst({ where: { phone: bill.student.parent_phone } });
+          if (user) {
+            await tx.userNotification.create({
+              data: {
+                user_id: user.id,
+                type: 'BILL',
+                title: 'Pembayaran Tagihan Berhasil',
+                message: `Pembayaran tagihan ${bill.fee_category.name} untuk ananda ${bill.student.name} sebesar Rp${billReductionAmount} telah berhasil.`,
+                action_data: { bill_id: bill.id },
+              },
+            });
+          }
+        }
+      });
+    }
+    this.logger.log(`Successfully processed Bill Payment ${externalId} (${transactions.length} bills)`);
   }
 
   private async handleDonationPaid(externalId: string, body: any) {

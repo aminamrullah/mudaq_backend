@@ -86,9 +86,10 @@ export class UserController {
   @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN)
   remove(
     @CurrentUser('tenant_uuid') tenantUuid: string,
+    @CurrentUser('role') requesterRole: Role,
     @Param('id') id: string,
   ) {
-    return this.userService.remove(tenantUuid, id);
+    return this.userService.remove(tenantUuid, id, requesterRole);
   }
 
   // ── Notifications ──

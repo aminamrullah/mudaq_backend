@@ -6,6 +6,7 @@ import {
   IsNumber,
   IsBoolean,
   ValidateIf,
+  IsDateString,
 } from 'class-validator';
 import { ApiProperty, PartialType } from '@nestjs/swagger';
 
@@ -102,6 +103,11 @@ export class CreateTenantDto {
   @ApiProperty({ required: false })
   @IsOptional()
   @IsNumber()
+  manual_topup_fee?: number;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsNumber()
   price_per_student?: number;
 
   @ApiProperty({ required: false })
@@ -128,6 +134,35 @@ export class CreateTenantDto {
   @IsOptional()
   @IsString()
   logo?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  letterhead?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  description?: string;
+
+  @ApiProperty({ required: false, example: 'MODERN' })
+  @IsString()
+  @IsOptional()
+  landing_page_template?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  can_manage_landing_page?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  landing_page_config?: any;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  expired_at?: string | Date;
 }
 
 export class UpdateTenantDto extends PartialType(CreateTenantDto) {
@@ -165,4 +200,9 @@ export class UpdateTenantDto extends PartialType(CreateTenantDto) {
   @IsOptional()
   @IsBoolean()
   is_active?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsNumber()
+  manual_topup_fee?: number;
 }

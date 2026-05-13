@@ -6,16 +6,22 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { normalizePhone } from '../../common/utils/phone.util';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
+import { KoperasiService } from '../koperasi/koperasi.service';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class WalisantriService {
   constructor(
     private prisma: PrismaService,
     private whatsappService: WhatsappService,
+    private koperasiSvc: KoperasiService,
   ) {}
 
   // Helper: verify student belongs to this wali
   private async verifyOwnership(tenantUuid: string, phone: string, studentId: string) {
+    if (!phone || phone.length < 5) {
+      throw new ForbiddenException('Akses ditolak: Nomor telepon tidak valid');
+    }
     const normalizedPhone = normalizePhone(phone);
     const student = await this.prisma.student.findFirst({
       where: { id: studentId, tenant_uuid: tenantUuid, parent_phone: normalizedPhone, deleted_at: null },
@@ -26,23 +32,91 @@ export class WalisantriService {
 
   // ── My Students ──
   async getMyStudents(tenantUuid: string, phone: string) {
-    const normalizedPhone = normalizePhone(phone);
-    return this.prisma.student.findMany({
-      where: { tenant_uuid: tenantUuid, parent_phone: normalizedPhone, deleted_at: null },
+    if (!phone || phone.trim() === '') return [];
+    
+    const cleanPhone = phone.replace(/[^0-9]/g, '');
+    if (cleanPhone.length < 5) return []; // Minimum phone length to avoid broad matches
+
+    const normalizedPhone = normalizePhone(cleanPhone);
+    const legacyPhone = normalizedPhone.startsWith('628') ? '0' + normalizedPhone.slice(2) : cleanPhone;
+
+    // Filter variants to ensure we only search for valid, non-empty strings
+    const phoneVariants = [normalizedPhone, legacyPhone, cleanPhone, phone].filter(v => v && v.length >= 5);
+
+    const students = await this.prisma.student.findMany({
+      where: { 
+        tenant_uuid: tenantUuid, 
+        parent_phone: { in: phoneVariants },
+        deleted_at: null 
+      },
       include: {
         classroom: { select: { id: true, name: true } },
         dormitory: { select: { id: true, name: true } },
         dormitory_room: { select: { id: true, name: true } },
-        wallet: { select: { id: true, balance: true } },
+        wallet: { select: { id: true, balance: true, pin: true, daily_spending_limit: true, weekly_spending_limit: true } },
       },
       orderBy: { name: 'asc' },
     });
+
+    return Promise.all(
+      students.map(async (s) => {
+        const totalBills = await this.prisma.bill.aggregate({
+          where: { student_id: s.id, status: { not: 'paid' } },
+          _sum: { amount: true, amount_paid: true },
+        });
+        const unpaidAmount =
+          Number(totalBills?._sum?.amount || 0) -
+          Number(totalBills?._sum?.amount_paid || 0);
+        return { 
+          ...s, 
+          total_unpaid_bills: unpaidAmount,
+          wallet: s.wallet ? {
+            ...s.wallet,
+            has_pin: !!s.wallet.pin,
+            pin: undefined,
+            daily_spending_limit: s.wallet.daily_spending_limit ? Number(s.wallet.daily_spending_limit) : null,
+            weekly_spending_limit: s.wallet.weekly_spending_limit ? Number(s.wallet.weekly_spending_limit) : null,
+          } : null
+        };
+      }),
+    );
+  }
+
+  async getProfile(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        pesantren: {
+          select: {
+            name: true,
+            slug: true,
+            logo: true,
+            calendar_type: true,
+          },
+        },
+      },
+    });
+
+    if (!user) throw new NotFoundException('User tidak ditemukan');
+
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      role: user.role,
+      tenant_uuid: user.tenant_uuid,
+      pesantren_name: user.pesantren?.name,
+      pesantren_slug: user.pesantren?.slug,
+      pesantren_logo: user.pesantren?.logo,
+      calendar_type: user.pesantren?.calendar_type || 'gregorian',
+    };
   }
 
   // ── Student Detail ──
   async getStudentDetail(tenantUuid: string, phone: string, studentId: string) {
     await this.verifyOwnership(tenantUuid, phone, studentId);
-    return this.prisma.student.findFirst({
+    const studentDetail = await this.prisma.student.findFirst({
       where: { id: studentId, tenant_uuid: tenantUuid },
       include: {
         classroom: true,
@@ -53,8 +127,27 @@ export class WalisantriService {
           orderBy: { date: 'desc' },
           take: 10,
         },
+        health_records: {
+          orderBy: { date: 'desc' },
+          take: 5,
+        },
+        violations: {
+          orderBy: { date: 'desc' },
+          take: 5,
+        },
       },
     });
+
+    if (studentDetail) {
+      if (studentDetail.wallet) {
+        (studentDetail as any).wallet.has_pin = !!studentDetail.wallet.pin;
+        (studentDetail as any).wallet.pin = undefined;
+      }
+      // Alias violations to violation_records for frontend consistency
+      (studentDetail as any).violation_records = (studentDetail as any).violations;
+    }
+
+    return studentDetail;
   }
 
   // ── Attendance ──
@@ -286,5 +379,97 @@ Mohon segera periksa dashboard untuk memberikan persetujuan.`;
       where: { id, tenant_uuid: tenantUuid },
       data: { status },
     });
+  }
+
+  // ── Spending Limit Management ──
+  async setSpendingLimit(
+    tenantUuid: string,
+    phone: string,
+    studentId: string,
+    body: { daily_limit?: number | null; weekly_limit?: number | null },
+  ) {
+    await this.verifyOwnership(tenantUuid, phone, studentId);
+
+    const wallet = await this.prisma.wallet.findFirst({
+      where: { student_id: studentId, tenant_uuid: tenantUuid },
+    });
+    if (!wallet) throw new NotFoundException('Wallet santri tidak ditemukan');
+
+    const data: any = {};
+    if (body.daily_limit !== undefined) {
+      data.daily_spending_limit = body.daily_limit !== null
+        ? new Prisma.Decimal(body.daily_limit)
+        : null;
+    }
+    if (body.weekly_limit !== undefined) {
+      data.weekly_spending_limit = body.weekly_limit !== null
+        ? new Prisma.Decimal(body.weekly_limit)
+        : null;
+    }
+
+    await this.prisma.wallet.update({
+      where: { id: wallet.id },
+      data,
+    });
+
+    const parts: string[] = [];
+    if (body.daily_limit !== undefined) {
+      parts.push(body.daily_limit !== null
+        ? `Harian: Rp ${body.daily_limit.toLocaleString('id-ID')}`
+        : 'Limit harian dihapus');
+    }
+    if (body.weekly_limit !== undefined) {
+      parts.push(body.weekly_limit !== null
+        ? `Mingguan: Rp ${body.weekly_limit.toLocaleString('id-ID')}`
+        : 'Limit mingguan dihapus');
+    }
+
+    return {
+      message: `Batas jajan berhasil diperbarui. ${parts.join(', ')}`,
+      daily_spending_limit: body.daily_limit !== undefined ? body.daily_limit : Number(wallet.daily_spending_limit) || null,
+      weekly_spending_limit: body.weekly_limit !== undefined ? body.weekly_limit : Number(wallet.weekly_spending_limit) || null,
+    };
+  }
+
+  async getSpendingSummary(
+    tenantUuid: string,
+    phone: string,
+    studentId: string,
+  ) {
+    await this.verifyOwnership(tenantUuid, phone, studentId);
+
+    const wallet = await this.prisma.wallet.findFirst({
+      where: { student_id: studentId, tenant_uuid: tenantUuid },
+    });
+    if (!wallet) throw new NotFoundException('Wallet santri tidak ditemukan');
+
+    const todaySpent = await this.koperasiSvc.getTodaySpending(wallet.id);
+    const weekSpent = await this.koperasiSvc.getWeekSpending(wallet.id);
+    const dailyLimit = wallet.daily_spending_limit ? Number(wallet.daily_spending_limit) : null;
+    const weeklyLimit = wallet.weekly_spending_limit ? Number(wallet.weekly_spending_limit) : null;
+
+    // Get recent transactions (last 7 days)
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    const recentTx = await this.prisma.walletTransaction.findMany({
+      where: {
+        wallet_id: wallet.id,
+        type: 'payment',
+        created_at: { gte: weekAgo },
+      },
+      orderBy: { created_at: 'desc' },
+      take: 20,
+    });
+
+    return {
+      balance: Number(wallet.balance),
+      daily_spending_limit: dailyLimit,
+      weekly_spending_limit: weeklyLimit,
+      today_spent: todaySpent,
+      week_spent: weekSpent,
+      remaining_daily: dailyLimit !== null ? Math.max(0, dailyLimit - todaySpent) : null,
+      remaining_weekly: weeklyLimit !== null ? Math.max(0, weeklyLimit - weekSpent) : null,
+      recent_spending: recentTx,
+    };
   }
 }

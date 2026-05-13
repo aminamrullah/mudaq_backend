@@ -19,6 +19,7 @@ model Pesantren {
   phone     String?
   address   String?
   logo      String?
+  letterhead String?
   
   // Xendit / Payment
   xendit_sub_account_id String?
@@ -27,6 +28,7 @@ model Pesantren {
   qris_platform_fee     Decimal  @default(0) @db.Decimal(12,2) // Total fee taken by platform for QRIS
   qris_surcharge_fee    Decimal  @default(0) @db.Decimal(12,2) // Extra amount added to student bill for QRIS
   qris_fee_is_percent   Boolean  @default(false)
+  manual_topup_fee      Decimal  @default(0) @db.Decimal(12,2) // Biaya admin untuk top up manual oleh pesantren
   xendit_status         String   @default("inactive") // active, inactive
   
   // Subscription
@@ -40,6 +42,12 @@ model Pesantren {
   fixed_billing_amount  Decimal  @default(0) @db.Decimal(12,2)
   billing_email         String?
   max_students          Int      @default(500)
+  
+  // Landing Page Configuration
+  description           String?  @db.Text
+  landing_page_template String   @default("MODERN")
+  landing_page_config   Json?    @default("{\"primaryColor\": \"#10b981\", \"secondaryColor\": \"#064e3b\", \"heroTitle\": \"Selamat Datang\", \"heroSubtitle\": \"Membangun Generasi Rabbani\", \"fontFamily\": \"Inter\"}")
+  can_manage_landing_page Boolean @default(false)
   
   is_active   Boolean  @default(true)
   created_at  DateTime @default(now())
@@ -61,6 +69,8 @@ model Pesantren {
   transactions       Transaction[]
   wallets            Wallet[]
   wallet_transactions WalletTransaction[]
+  tenant_wallet      TenantWallet?
+  tenant_wallet_txs  TenantWalletTransaction[]
   topup_logs         TopupLog[]
   attendances        Attendance[]
   tahfidz_records    TahfidzRecord[]
@@ -88,6 +98,20 @@ model Pesantren {
   expenditures        Expenditure[]
   user_activities     UserActivity[]
   problem_tickets     ProblemTicket[]
+  koperasi_outlets    KoperasiOutlet[]
+  product_categories  ProductCategory[]
+  product_units       ProductUnit[]
+  products            Product[]
+  pos_sessions        PosSession[]
+  pos_orders          PosOrder[]
+  stock_movements     StockMovement[]
+  stock_opnames       StockOpname[]
+  promotions          Promotion[]
+  subject_categories  SubjectCategory[]
+
+  // PPDB (Student Registration)
+  ppdb_is_active      Boolean  @default(false)
+  ppdb_waves          PpdbWave[]
 
   @@map("pesantrens")
 }
@@ -102,6 +126,8 @@ enum Role {
   STAFF_PESANTREN
   USTAD
   WALI_SANTRI
+  KEPALA_KOPERASI
+  STAF_KOPERASI
 }
 
 model User {
@@ -127,6 +153,12 @@ model User {
   activities    UserActivity[]
   created_tickets ProblemTicket[] @relation("TicketCreator")
   ticket_messages ProblemTicketMessage[]
+  pos_sessions    PosSession[]
+  pos_cashier_orders PosOrder[] @relation("PosCashier")
+  
+  koperasi_outlet_id String? @db.Uuid
+  koperasi_outlet    KoperasiOutlet? @relation("UserOutlet", fields: [koperasi_outlet_id], references: [id])
+  stock_movements    StockMovement[]
 
   @@index([tenant_uuid])
   @@index([email])
@@ -215,14 +247,15 @@ model Subject {
   tenant_uuid String   @db.Uuid
   name        String
   code        String?
-  category    String?  // diniyah, formal, tahfidz
+  category_id String?  @db.Uuid
   kkm         Int      @default(70)
   is_active   Boolean  @default(true)
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 
-  pesantren   Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
-  schedules   Schedule[]
+  pesantren      Pesantren        @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  category       SubjectCategory? @relation(fields: [category_id], references: [id])
+  schedules      Schedule[]
   question_banks QuestionBank[]
   exam_schedules ExamSchedule[]
   report_details ReportCardDetail[]
@@ -231,6 +264,22 @@ model Subject {
   @@unique([tenant_uuid, code])
   @@index([tenant_uuid])
   @@map("subjects")
+}
+
+model SubjectCategory {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_uuid String   @db.Uuid
+  name        String
+  description String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  subjects  Subject[]
+
+  @@unique([tenant_uuid, name])
+  @@index([tenant_uuid])
+  @@map("subject_categories")
 }
 
 model Classroom {
@@ -361,6 +410,7 @@ model Student {
   dormitory_id        String?  @db.Uuid
   dormitory_room_id   String?  @db.Uuid
   tahfidz_teacher_id  String?  @db.Uuid
+  ppdb_wave_id        String?  @db.Uuid
   
   status           String   @default("CALON") // CALON, AKTIF, ALUMNI, BOYONG, KELUAR
   entry_year       Int?
@@ -378,6 +428,7 @@ model Student {
   dormitory       Dormitory?     @relation(fields: [dormitory_id], references: [id])
   dormitory_room  DormitoryRoom? @relation(fields: [dormitory_room_id], references: [id])
   tahfidz_teacher Teacher?       @relation("TahfidzStudents", fields: [tahfidz_teacher_id], references: [id])
+  ppdb_wave       PpdbWave?      @relation(fields: [ppdb_wave_id], references: [id])
   
   wallet           Wallet?
   bills            Bill[]
@@ -391,6 +442,7 @@ model Student {
   report_cards     ReportCard[]
   histories        StudentHistory[]
   assignment_grades AssignmentGrade[]
+  pos_orders       PosOrder[]
 
   @@unique([tenant_uuid, nis])
   @@index([tenant_uuid])
@@ -641,11 +693,13 @@ model Wallet {
   id          String   @id @default(uuid()) @db.Uuid
   tenant_uuid String   @db.Uuid
   student_id  String   @unique @db.Uuid
-  balance     Decimal  @default(0) @db.Decimal(12,2)
-  pin         String?
-  is_active   Boolean  @default(true)
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
+  balance               Decimal  @default(0) @db.Decimal(12,2)
+  pin                   String?
+  is_active             Boolean  @default(true)
+  daily_spending_limit  Decimal? @db.Decimal(12,2)  // null = unlimited
+  weekly_spending_limit Decimal? @db.Decimal(12,2)  // null = unlimited
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
 
   pesantren    Pesantren          @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
   student      Student            @relation(fields: [student_id], references: [id], onDelete: Cascade)
@@ -674,6 +728,35 @@ model WalletTransaction {
   @@index([tenant_uuid])
   @@index([wallet_id])
   @@map("wallet_transactions")
+}
+
+model TenantWallet {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_uuid String   @unique @db.Uuid
+  balance     Decimal  @default(0) @db.Decimal(12,2)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  pesantren   Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+
+  @@map("tenant_wallets")
+}
+
+model TenantWalletTransaction {
+  id             String   @id @default(uuid()) @db.Uuid
+  tenant_uuid    String   @db.Uuid
+  type           String   // deposit_from_superadmin, withdraw_to_superadmin, student_topup, student_withdraw
+  amount         Decimal  @db.Decimal(12,2)
+  balance_before Decimal  @db.Decimal(12,2)
+  balance_after  Decimal  @db.Decimal(12,2)
+  reference      String?
+  description    String?
+  created_at     DateTime @default(now())
+
+  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+
+  @@index([tenant_uuid])
+  @@map("tenant_wallet_transactions")
 }
 
 model TopupLog {
@@ -956,6 +1039,10 @@ model ReportCard {
   average_score    Decimal? @db.Decimal(5,2)
   rank             Int?
   notes_homeroom   String?
+  traits           Json?    // { discipline: 'A', neatness: 'A', ... }
+  attendance_sick  Int      @default(0)
+  attendance_izin  Int      @default(0)
+  attendance_alpa  Int      @default(0)
   status           String   @default("draft") // draft, published
   created_at       DateTime @default(now())
   updated_at       DateTime @updatedAt
@@ -1202,3 +1289,323 @@ model ProblemTicketMessage {
   @@index([sender_id])
   @@map("problem_ticket_messages")
 }
+
+// ═══════════════════════════════════════════════════════════════
+//  KOPERASI / KANTIN POS
+// ═══════════════════════════════════════════════════════════════
+
+// Satu pesantren bisa punya banyak outlet koperasi
+model KoperasiOutlet {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_uuid String   @db.Uuid
+  name        String   // "Kantin Putra", "Koperasi Utama"
+  code        String?  // KOP-01
+  address     String?
+  phone       String?
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  pesantren       Pesantren          @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  products        Product[]
+  pos_sessions    PosSession[]
+  pos_orders      PosOrder[]
+  stock_movements StockMovement[]
+  stock_opnames   StockOpname[]
+  promotions      Promotion[]
+  
+  product_categories ProductCategory[]
+  product_units      ProductUnit[]
+  assigned_users  User[] @relation("UserOutlet")
+
+  @@unique([tenant_uuid, name])
+  @@index([tenant_uuid])
+  @@map("koperasi_outlets")
+}
+
+model ProductCategory {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_uuid String   @db.Uuid
+  outlet_id   String?  @db.Uuid
+  name        String
+  icon        String?
+  is_active   Boolean  @default(true)
+  sort_order  Int      @default(0)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  pesantren Pesantren       @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  outlet    KoperasiOutlet?  @relation(fields: [outlet_id], references: [id])
+  products  Product[]
+
+  @@unique([tenant_uuid, outlet_id, name])
+  @@index([tenant_uuid])
+  @@index([outlet_id])
+  @@map("product_categories")
+}
+
+model ProductUnit {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_uuid String   @db.Uuid
+  outlet_id   String?  @db.Uuid
+  name        String   // pcs, kg, liter, pack, etc.
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  pesantren Pesantren       @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  outlet    KoperasiOutlet?  @relation(fields: [outlet_id], references: [id])
+  products  Product[]
+
+  @@unique([tenant_uuid, outlet_id, name])
+  @@index([tenant_uuid])
+  @@index([outlet_id])
+  @@map("product_units")
+}
+
+model Product {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenant_uuid     String   @db.Uuid
+  outlet_id       String   @db.Uuid
+  category_id     String?  @db.Uuid
+  unit_id         String?  @db.Uuid
+  name            String
+  sku             String?
+  barcode         String?
+  description     String?
+  price           Decimal  @db.Decimal(12,2)     // Harga jual
+  cost_price      Decimal  @default(0) @db.Decimal(12,2)  // HPP dari supplier
+  margin_percent  Decimal  @default(0) @db.Decimal(5,2)   // Margin % 
+  stock           Int      @default(0)
+  min_stock       Int      @default(5)
+  image_url       String?
+  unit            String   @default("pcs") // pcs, kg, liter, pack (Deprecated in favor of unit_id but kept for compatibility)
+  supplier_name   String?
+  supplier_phone  String?
+  is_active       Boolean  @default(true)
+  track_stock     Boolean  @default(true)
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  pesantren       Pesantren         @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  outlet          KoperasiOutlet    @relation(fields: [outlet_id], references: [id], onDelete: Cascade)
+  category        ProductCategory?  @relation(fields: [category_id], references: [id])
+  product_unit    ProductUnit?      @relation(fields: [unit_id], references: [id])
+  order_items     PosOrderItem[]
+  stock_movements StockMovement[]
+  opname_items    StockOpnameItem[]
+  promo_products  PromotionProduct[]
+
+  @@unique([tenant_uuid, sku])
+  @@index([tenant_uuid])
+  @@index([outlet_id])
+  @@index([category_id])
+  @@index([unit_id])
+  @@map("products")
+}
+
+// ─── STOCK MANAGEMENT ────────────────────────────────────────
+model StockMovement {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenant_uuid     String   @db.Uuid
+  outlet_id       String   @db.Uuid
+  product_id      String   @db.Uuid
+  type            String   // purchase_in, sale_out, opname_adjust, return, damage, transfer
+  quantity        Int      // positive=in, negative=out
+  cost_price      Decimal? @db.Decimal(12,2) // HPP saat pembelian
+  stock_before    Int
+  stock_after     Int
+  reference       String?  // PO number, order_no, opname_id
+  supplier_name   String?
+  notes           String?
+  created_by      String?  @db.Uuid
+  created_at      DateTime @default(now())
+
+  pesantren Pesantren      @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  outlet    KoperasiOutlet @relation(fields: [outlet_id], references: [id], onDelete: Cascade)
+  product   Product        @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  created_by_user User?      @relation(fields: [created_by], references: [id])
+
+  @@index([tenant_uuid])
+  @@index([outlet_id])
+  @@index([product_id])
+  @@map("stock_movements")
+}
+
+model StockOpname {
+  id          String    @id @default(uuid()) @db.Uuid
+  tenant_uuid String    @db.Uuid
+  outlet_id   String    @db.Uuid
+  opname_no   String    @unique
+  date        DateTime  @db.Date
+  status      String    @default("draft") // draft, completed, cancelled
+  notes       String?
+  created_by  String?   @db.Uuid
+  completed_at DateTime?
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+
+  pesantren Pesantren        @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  outlet    KoperasiOutlet   @relation(fields: [outlet_id], references: [id], onDelete: Cascade)
+  items     StockOpnameItem[]
+
+  @@index([tenant_uuid])
+  @@index([outlet_id])
+  @@map("stock_opnames")
+}
+
+model StockOpnameItem {
+  id             String @id @default(uuid()) @db.Uuid
+  opname_id      String @db.Uuid
+  product_id     String @db.Uuid
+  system_stock   Int    // stok di sistem
+  actual_stock   Int    // stok fisik
+  difference     Int    // actual - system
+  notes          String?
+
+  opname  StockOpname @relation(fields: [opname_id], references: [id], onDelete: Cascade)
+  product Product     @relation(fields: [product_id], references: [id])
+
+  @@unique([opname_id, product_id])
+  @@index([opname_id])
+  @@map("stock_opname_items")
+}
+
+// ─── PROMOTIONS ──────────────────────────────────────────────
+model Promotion {
+  id              String    @id @default(uuid()) @db.Uuid
+  tenant_uuid     String    @db.Uuid
+  outlet_id       String    @db.Uuid
+  name            String
+  description     String?
+  discount_type   String    // percentage, fixed_amount
+  discount_value  Decimal   @db.Decimal(12,2)
+  min_purchase    Decimal   @default(0) @db.Decimal(12,2)
+  max_discount    Decimal?  @db.Decimal(12,2) // cap for percentage
+  apply_to        String    @default("all") // all, selected_products, category
+  start_date      DateTime
+  end_date        DateTime
+  is_active       Boolean   @default(true)
+  usage_limit     Int?      // null = unlimited
+  usage_count     Int       @default(0)
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  pesantren Pesantren          @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  outlet    KoperasiOutlet     @relation(fields: [outlet_id], references: [id], onDelete: Cascade)
+  products  PromotionProduct[]
+
+  @@index([tenant_uuid])
+  @@index([outlet_id])
+  @@map("promotions")
+}
+
+model PromotionProduct {
+  id           String @id @default(uuid()) @db.Uuid
+  promotion_id String @db.Uuid
+  product_id   String @db.Uuid
+
+  promotion Promotion @relation(fields: [promotion_id], references: [id], onDelete: Cascade)
+  product   Product   @relation(fields: [product_id], references: [id])
+
+  @@unique([promotion_id, product_id])
+  @@map("promotion_products")
+}
+
+// ─── POS ─────────────────────────────────────────────────────
+model PosSession {
+  id              String    @id @default(uuid()) @db.Uuid
+  tenant_uuid     String    @db.Uuid
+  outlet_id       String    @db.Uuid
+  cashier_id      String    @db.Uuid
+  opening_balance Decimal   @default(0) @db.Decimal(12,2)
+  closing_balance Decimal?  @db.Decimal(12,2)
+  total_sales     Decimal   @default(0) @db.Decimal(12,2)
+  total_orders    Int       @default(0)
+  opened_at       DateTime  @default(now())
+  closed_at       DateTime?
+  notes           String?
+
+  pesantren Pesantren      @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  outlet    KoperasiOutlet @relation(fields: [outlet_id], references: [id], onDelete: Cascade)
+  cashier   User           @relation(fields: [cashier_id], references: [id])
+  orders    PosOrder[]
+
+  @@index([tenant_uuid])
+  @@index([outlet_id])
+  @@index([cashier_id])
+  @@map("pos_sessions")
+}
+
+model PosOrder {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenant_uuid     String   @db.Uuid
+  outlet_id       String   @db.Uuid
+  order_no        String   @unique
+  order_type      String   @default("sale") // sale, bill_payment, topup, withdrawal
+  session_id      String?  @db.Uuid
+  student_id      String?  @db.Uuid
+  cashier_id      String   @db.Uuid
+  bill_id         String?  @db.Uuid  // for bill_payment type
+  subtotal        Decimal  @db.Decimal(12,2)
+  discount        Decimal  @default(0) @db.Decimal(12,2)
+  promo_id        String?  @db.Uuid
+  promo_name      String?
+  total           Decimal  @db.Decimal(12,2)
+  payment_method  String   @default("wallet") // wallet, cash
+  wallet_tx_ref   String?
+  status          String   @default("completed") // completed, cancelled, refunded
+  notes           String?
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  pesantren Pesantren      @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  outlet    KoperasiOutlet @relation(fields: [outlet_id], references: [id], onDelete: Cascade)
+  session   PosSession?    @relation(fields: [session_id], references: [id])
+  student   Student?       @relation(fields: [student_id], references: [id])
+  cashier   User           @relation("PosCashier", fields: [cashier_id], references: [id])
+  items     PosOrderItem[]
+
+  @@index([tenant_uuid])
+  @@index([outlet_id])
+  @@index([student_id])
+  @@index([session_id])
+  @@map("pos_orders")
+}
+
+model PosOrderItem {
+  id           String  @id @default(uuid()) @db.Uuid
+  order_id     String  @db.Uuid
+  product_id   String  @db.Uuid
+  product_name String
+  quantity     Int
+  unit_price   Decimal @db.Decimal(12,2)
+  cost_price   Decimal @default(0) @db.Decimal(12,2) // HPP snapshot
+  discount     Decimal @default(0) @db.Decimal(12,2)
+  subtotal     Decimal @db.Decimal(12,2)
+
+  order   PosOrder @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  product Product  @relation(fields: [product_id], references: [id])
+
+  @@index([order_id])
+  @@map("pos_order_items")
+}
+
+model PpdbWave {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_uuid String   @db.Uuid
+  name        String   // e.g., "Gelombang 1", "Jalur Prestasi"
+  start_date  DateTime
+  end_date    DateTime
+  quota       Int      @default(0)
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  students  Student[]
+
+  @@unique([tenant_uuid, name])
+  @@index([tenant_uuid])
+  @@map("ppdb_waves")
+}
+

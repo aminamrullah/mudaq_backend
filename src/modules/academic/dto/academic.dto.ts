@@ -93,7 +93,7 @@ export class CreateSubjectDto {
   @ApiPropertyOptional()
   @IsString()
   @IsOptional()
-  category?: string;
+  category_id?: string;
 
   @ApiPropertyOptional()
   @IsNumber()
@@ -102,6 +102,20 @@ export class CreateSubjectDto {
 }
 
 export class UpdateSubjectDto extends PartialType(CreateSubjectDto) {}
+
+export class CreateSubjectCategoryDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  name: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  description?: string;
+}
+
+export class UpdateSubjectCategoryDto extends PartialType(CreateSubjectCategoryDto) {}
 
 export class CreateScheduleDto {
   @ApiProperty()
@@ -262,14 +276,29 @@ export class UpdateExamScheduleDto extends PartialType(CreateExamScheduleDto) {
 
 export class GenerateReportCardDto {
   @ApiProperty() @IsString() classroom_id: string;
-  @ApiProperty() @IsString() academic_year_id: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() academic_year_id?: string;
   @ApiPropertyOptional() @IsString() @IsOptional() period_id?: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() student_id?: string;
 }
 
 export class UpdateReportCardDto {
   @ApiPropertyOptional() @IsString() @IsOptional() notes_homeroom?: string;
   @ApiPropertyOptional() @IsString() @IsOptional() status?: string; // draft, published
   @ApiPropertyOptional() @IsArray() @IsOptional() details?: any[];
+  @ApiPropertyOptional() @IsOptional() traits?: any;
+  @ApiPropertyOptional() @IsNumber() @IsOptional() attendance_sick?: number;
+  @ApiPropertyOptional() @IsNumber() @IsOptional() attendance_izin?: number;
+  @ApiPropertyOptional() @IsNumber() @IsOptional() attendance_alpa?: number;
+}
+
+export class SaveReportCardDto {
+  @ApiProperty() @IsString() student_id: string;
+  @ApiProperty() @IsString() classroom_id: string;
+  @ApiProperty() @IsString() academic_year_id: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() period_id?: string;
+  @ApiProperty() @IsNumber() total_score: number;
+  @ApiProperty() @IsNumber() average_score: number;
+  @ApiProperty() @IsArray() details: any[];
 }
 
 export class SaveExamResultDto {

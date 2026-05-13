@@ -86,5 +86,34 @@ export class WalletController {
   updatePin(@CurrentUser('tenant_uuid') t: string, @Body() dto: UpdatePinDto) {
     return this.svc.updatePin(t, dto);
   }
+
+  @Get('tenant')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN)
+  @ApiOperation({ summary: 'Get Tenant Wallet (Saldo Induk)' })
+  getTenantWallet(@CurrentUser('tenant_uuid') t: string) {
+    return this.svc.getTenantWallet(t);
+  }
+
+  @Post('tenant/topup')
+  @Roles(Role.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Top up Tenant Wallet by Superadmin' })
+  topupTenantWallet(
+    @CurrentUser('tenant_uuid') t: string,
+    @Body() dto: { target_tenant_uuid?: string; amount: number; description?: string },
+  ) {
+    const targetUuid = dto.target_tenant_uuid || t;
+    return this.svc.topupTenantWallet(targetUuid, dto);
+  }
+
+  @Post('tenant/withdraw')
+  @Roles(Role.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Withdraw Tenant Wallet by Superadmin' })
+  withdrawTenantWallet(
+    @CurrentUser('tenant_uuid') t: string,
+    @Body() dto: { target_tenant_uuid?: string; amount: number; description?: string },
+  ) {
+    const targetUuid = dto.target_tenant_uuid || t;
+    return this.svc.withdrawTenantWallet(targetUuid, dto);
+  }
 }
 

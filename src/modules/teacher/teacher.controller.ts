@@ -60,7 +60,7 @@ export class TeacherController {
   }
 
   @Put(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN)
   update(
     @CurrentUser('tenant_uuid') t: string,
     @Param('id') id: string,
@@ -70,8 +70,19 @@ export class TeacherController {
   }
 
   @Delete(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN)
   remove(@CurrentUser('tenant_uuid') t: string, @Param('id') id: string) {
     return this.svc.remove(t, id);
+  }
+
+  @Put(':id/students')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN)
+  @ApiOperation({ summary: 'Bulk assign students to teacher' })
+  assignStudents(
+    @CurrentUser('tenant_uuid') t: string,
+    @Param('id') id: string,
+    @Body('student_ids') studentIds: string[],
+  ) {
+    return this.svc.assignStudents(t, id, studentIds);
   }
 }

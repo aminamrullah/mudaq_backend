@@ -24,6 +24,11 @@ export class CreateUserDto {
   @ApiProperty({ required: false })
   @IsOptional()
   base_salary?: number;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  koperasi_outlet_id?: string;
 }
 
 export class UpdateUserDto extends PartialType(CreateUserDto) {}
