@@ -108,6 +108,7 @@ model Pesantren {
   stock_opnames       StockOpname[]
   promotions          Promotion[]
   subject_categories  SubjectCategory[]
+  kitabs              Kitab[]
 
   // PPDB (Student Registration)
   ppdb_is_active      Boolean  @default(false)
@@ -354,12 +355,32 @@ model Schedule {
   classroom   Classroom   @relation(fields: [classroom_id], references: [id], onDelete: Cascade)
   subject     Subject     @relation(fields: [subject_id], references: [id])
   teacher     Teacher?    @relation(fields: [teacher_id], references: [id])
+  kitab_id    String?     @db.Uuid
+  kitab       Kitab?      @relation(fields: [kitab_id], references: [id])
   attendances Attendance[]
   teacher_attendances TeacherAttendance[]
   teaching_journals   TeachingJournal[]
 
   @@index([tenant_uuid])
   @@map("schedules")
+}
+
+model Kitab {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_uuid String   @db.Uuid
+  name        String
+  author      String?
+  description String?
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  schedules Schedule[]
+
+  @@unique([tenant_uuid, name])
+  @@index([tenant_uuid])
+  @@map("kitabs")
 }
 
 // ═══════════════════════════════════════════════════════════════

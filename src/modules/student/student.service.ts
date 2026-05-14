@@ -6,7 +6,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CreateStudentDto, UpdateStudentDto } from './dto/student.dto';
+import { CreateStudentDto, UpdateStudentDto, BulkMutateStudentDto } from './dto/student.dto';
 import * as bcrypt from 'bcryptjs';
 import { Prisma } from '@prisma/client';
 import { normalizePhone } from '../../common/utils/phone.util';
@@ -667,6 +667,73 @@ export class StudentService {
         date: new Date(data.date),
         notes: data.notes,
       },
+    });
+  }
+
+  async bulkMutate(tenantUuid: string, dto: BulkMutateStudentDto) {
+    const { student_ids, classroom_id, dormitory_id, dormitory_room_id, academic_year_id, status, notes } = dto;
+    
+    return await this.prisma.$transaction(async (tx) => {
+      const results = [];
+      const now = new Date();
+
+      for (const studentId of student_ids) {
+        const current = await tx.student.findFirst({
+          where: { id: studentId, tenant_uuid: tenantUuid, deleted_at: null },
+        });
+
+        if (!current) continue;
+
+        const updateData: any = {};
+        
+        // Track and Update Status
+        if (status && status !== current.status) {
+          const newStatus = status === 'active' ? 'AKTIF' : status.toUpperCase();
+          if (newStatus !== current.status) {
+            updateData.status = newStatus;
+            await this.recordHistory(tx, tenantUuid, studentId, 'STATUS', current.status, newStatus, notes || 'Mutasi kolektif');
+            if (newStatus === 'ALUMNI' || newStatus === 'BOYONG') {
+              updateData.graduation_date = now;
+            }
+          }
+        }
+
+        // Track and Update Classroom
+        if (classroom_id !== undefined && classroom_id !== current.classroom_id) {
+          updateData.classroom_id = classroom_id === '' ? null : classroom_id;
+          await this.recordHistory(tx, tenantUuid, studentId, 'CLASSROOM', current.classroom_id, updateData.classroom_id, notes || 'Mutasi kolektif');
+        }
+
+        // Track and Update Academic Year
+        if (academic_year_id !== undefined && academic_year_id !== current.academic_year_id) {
+          updateData.academic_year_id = academic_year_id === '' ? null : academic_year_id;
+        }
+
+        // Track and Update Dormitory
+        if (dormitory_id !== undefined && dormitory_id !== current.dormitory_id) {
+          updateData.dormitory_id = dormitory_id === '' ? null : dormitory_id;
+          await this.recordHistory(tx, tenantUuid, studentId, 'DORMITORY', current.dormitory_id, updateData.dormitory_id, notes || 'Mutasi kolektif');
+        }
+
+        // Track and Update Room
+        if (dormitory_room_id !== undefined && dormitory_room_id !== current.dormitory_room_id) {
+          updateData.dormitory_room_id = dormitory_room_id === '' ? null : dormitory_room_id;
+          await this.recordHistory(tx, tenantUuid, studentId, 'ROOM', current.dormitory_room_id, updateData.dormitory_room_id, notes || 'Mutasi kolektif');
+        }
+
+        if (Object.keys(updateData).length > 0) {
+          const updated = await tx.student.update({
+            where: { id: studentId },
+            data: updateData,
+          });
+          results.push(updated);
+        }
+      }
+
+      return {
+        count: results.length,
+        message: `${results.length} santri berhasil dimutasi.`,
+      };
     });
   }
 }

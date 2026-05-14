@@ -45,6 +45,7 @@ export class DashboardService {
       totalDisbursement,
       tenantInfo,
       pendingPermissionsCount,
+      tenantWallet,
     ] = await Promise.all([
       this.prisma.student.count({
         where: { tenant_uuid: tenantUuid, deleted_at: null },
@@ -128,10 +129,13 @@ export class DashboardService {
       }),
       this.prisma.pesantren.findUnique({
         where: { id: tenantUuid },
-        select: { max_students: true, slug: true }
+        select: { max_students: true, slug: true, ppdb_is_active: true }
       }),
       this.prisma.studentPermission.count({
         where: { tenant_uuid: tenantUuid, status: 'pending' }
+      }),
+      this.prisma.tenantWallet.findUnique({
+        where: { tenant_uuid: tenantUuid }
       }),
     ]);
 
@@ -189,6 +193,8 @@ export class DashboardService {
         },
       },
       pesantren_slug: tenantInfo?.slug,
+      ppdb_is_active: tenantInfo?.ppdb_is_active || false,
+      tenant_wallet_balance: Number(tenantWallet?.balance || 0),
     };
   }
 

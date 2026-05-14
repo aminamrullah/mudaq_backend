@@ -26,6 +26,9 @@ import {
   SaveExamResultDto,
   CreateSubjectCategoryDto,
   UpdateSubjectCategoryDto,
+  CreateKitabDto,
+  UpdateKitabDto,
+  UpdateScheduleDto,
 } from './dto/academic.dto';
 
 @Injectable()
@@ -209,6 +212,40 @@ export class AcademicService {
   }
 
   // ==========================================
+  // Kitabs
+  // ==========================================
+  async getKitabs(tenantId: string) {
+    return this.prisma.kitab.findMany({
+      where: { tenant_uuid: tenantId },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  async createKitab(tenantId: string, dto: CreateKitabDto) {
+    return this.prisma.kitab.create({
+      data: {
+        tenant_uuid: tenantId,
+        name: dto.name,
+        author: dto.author,
+        description: dto.description,
+      },
+    });
+  }
+
+  async updateKitab(tenantId: string, id: string, dto: UpdateKitabDto) {
+    return this.prisma.kitab.update({
+      where: { id, tenant_uuid: tenantId },
+      data: dto,
+    });
+  }
+
+  async deleteKitab(tenantId: string, id: string) {
+    return this.prisma.kitab.delete({
+      where: { id, tenant_uuid: tenantId },
+    });
+  }
+
+  // ==========================================
   // Subject Categories
   // ==========================================
   async getSubjectCategories(tenantId: string) {
@@ -282,7 +319,7 @@ export class AcademicService {
 
     return this.prisma.schedule.findMany({
       where,
-      include: { subject: true, teacher: true, classroom: true },
+      include: { subject: true, teacher: true, classroom: true, kitab: true },
     });
   }
 
@@ -293,10 +330,18 @@ export class AcademicService {
         classroom_id: dto.classroom_id,
         subject_id: dto.subject_id,
         teacher_id: dto.teacher_id,
+        kitab_id: dto.kitab_id,
         day_of_week: dto.day_of_week,
         start_time: dto.start_time,
         end_time: dto.end_time,
       },
+    });
+  }
+
+  async updateSchedule(tenantId: string, id: string, dto: UpdateScheduleDto) {
+    return this.prisma.schedule.update({
+      where: { id, tenant_uuid: tenantId },
+      data: dto,
     });
   }
 

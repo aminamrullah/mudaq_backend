@@ -20,7 +20,7 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { StudentService } from './student.service';
-import { CreateStudentDto, UpdateStudentDto } from './dto/student.dto';
+import { CreateStudentDto, UpdateStudentDto, BulkMutateStudentDto } from './dto/student.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { TenantGuard } from '../../common/guards/tenant.guard';
@@ -39,6 +39,13 @@ export class StudentController {
   @ApiOperation({ summary: 'Create santri' })
   create(@CurrentUser('tenant_uuid') t: string, @Body() dto: CreateStudentDto) {
     return this.studentService.create(t, dto);
+  }
+
+  @Post('bulk-mutate')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN)
+  @ApiOperation({ summary: 'Bulk mutate santri (class promotion/graduation)' })
+  bulkMutate(@CurrentUser('tenant_uuid') t: string, @Body() dto: BulkMutateStudentDto) {
+    return this.studentService.bulkMutate(t, dto);
   }
 
   @Post('import')

@@ -147,7 +147,14 @@ export class CreateScheduleDto {
   @IsString()
   @IsNotEmpty()
   end_time: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  kitab_id?: string;
 }
+
+export class UpdateScheduleDto extends PartialType(CreateScheduleDto) {}
 
 export class CreateQuestionBankDto {
   @ApiProperty()
@@ -309,4 +316,28 @@ export class ExamResultItemDto {
   @IsString() @IsNotEmpty() student_id: string;
   @IsNumber() score: number;
   @IsOptional() @IsString() notes?: string;
+}
+
+export class CreateKitabDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  name: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  author?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  description?: string;
+}
+
+export class UpdateKitabDto extends PartialType(CreateKitabDto) {
+  @ApiPropertyOptional()
+  @IsBoolean()
+  @IsOptional()
+  is_active?: boolean;
 }

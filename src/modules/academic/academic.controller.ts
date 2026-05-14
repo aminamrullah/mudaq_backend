@@ -43,6 +43,9 @@ import {
   SaveExamResultDto,
   CreateSubjectCategoryDto,
   UpdateSubjectCategoryDto,
+  CreateKitabDto,
+  UpdateKitabDto,
+  UpdateScheduleDto,
 } from './dto/academic.dto';
 
 @ApiTags('academic')
@@ -184,6 +187,40 @@ export class AcademicController {
   }
 
   // ==========================================
+  // Kitabs
+  // ==========================================
+  @Get('kitabs')
+  @ApiOperation({ summary: 'Get kitabs' })
+  getKitabs(@CurrentUser('tenant_uuid') t: string) {
+    return this.academicService.getKitabs(t);
+  }
+
+  @Post('kitabs')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN)
+  @ApiOperation({ summary: 'Create kitab' })
+  createKitab(@CurrentUser('tenant_uuid') t: string, @Body() dto: CreateKitabDto) {
+    return this.academicService.createKitab(t, dto);
+  }
+
+  @Put('kitabs/:id')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN)
+  @ApiOperation({ summary: 'Update kitab' })
+  updateKitab(
+    @CurrentUser('tenant_uuid') t: string,
+    @Param('id') id: string,
+    @Body() dto: UpdateKitabDto,
+  ) {
+    return this.academicService.updateKitab(t, id, dto);
+  }
+
+  @Delete('kitabs/:id')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN)
+  @ApiOperation({ summary: 'Delete kitab' })
+  deleteKitab(@CurrentUser('tenant_uuid') t: string, @Param('id') id: string) {
+    return this.academicService.deleteKitab(t, id);
+  }
+
+  // ==========================================
   // Subject Categories
   // ==========================================
   @Get('categories')
@@ -237,6 +274,17 @@ export class AcademicController {
   @ApiOperation({ summary: 'Create schedule' })
   createSchedule(@CurrentUser('tenant_uuid') t: string, @Body() dto: CreateScheduleDto) {
     return this.academicService.createSchedule(t, dto);
+  }
+
+  @Put('schedules/:id')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN)
+  @ApiOperation({ summary: 'Update schedule' })
+  updateSchedule(
+    @CurrentUser('tenant_uuid') t: string,
+    @Param('id') id: string,
+    @Body() dto: UpdateScheduleDto,
+  ) {
+    return this.academicService.updateSchedule(t, id, dto);
   }
 
   @Delete('schedules/:id')

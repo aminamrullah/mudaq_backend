@@ -3,6 +3,7 @@ import {
   IsOptional,
   IsString,
   IsDateString,
+  IsArray,
 } from 'class-validator';
 import { ApiProperty, PartialType } from '@nestjs/swagger';
 
@@ -109,3 +110,13 @@ export class CreateStudentDto {
 }
 
 export class UpdateStudentDto extends PartialType(CreateStudentDto) {}
+
+export class BulkMutateStudentDto {
+  @ApiProperty() @IsNotEmpty() @IsArray() student_ids: string[];
+  @ApiProperty({ required: false }) @IsOptional() @IsString() classroom_id?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() dormitory_id?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() dormitory_room_id?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() academic_year_id?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() status?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() notes?: string;
+}

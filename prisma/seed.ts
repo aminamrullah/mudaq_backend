@@ -152,7 +152,7 @@ async function main() {
         dormitory_id: dormitory.id,
         academic_year_id: academicYear.id,
         tahfidz_teacher_id: teacher.id,
-        status: 'active',
+        status: 'AKTIF',
       },
     });
 
