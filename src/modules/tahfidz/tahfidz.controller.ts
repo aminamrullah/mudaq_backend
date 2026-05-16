@@ -14,16 +14,18 @@ import { CreateTahfidzRecordDto, UpdateTahfidzRecordDto } from './dto/tahfidz.dt
 @UseGuards(AuthGuard('jwt'), RolesGuard, TenantGuard)
 @Controller('tahfidz')
 export class TahfidzController {
-  constructor(private readonly tahfidzService: TahfidzService) {}
+  constructor(private readonly tahfidzService: TahfidzService) { }
 
   @Get()
   @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN, Role.USTAD)
   @ApiOperation({ summary: 'Get tahfidz records' })
   getRecords(
     @CurrentUser('tenant_uuid') t: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUser('role') role: string,
     @Query() query: any
   ) {
-    return this.tahfidzService.getRecords(t, query);
+    return this.tahfidzService.getRecords(t, query, userId, role);
   }
 
   @Post()
@@ -31,25 +33,33 @@ export class TahfidzController {
   @ApiOperation({ summary: 'Create tahfidz record' })
   createRecord(
     @CurrentUser('tenant_uuid') t: string,
+    @CurrentUser('id') userId: string,
+    @CurrentUser('role') role: string,
     @Body() dto: CreateTahfidzRecordDto
   ) {
-    return this.tahfidzService.createRecord(t, dto);
+    return this.tahfidzService.createRecord(t, dto, userId, role);
   }
 
   @Put(':id')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.USTAD)
   @ApiOperation({ summary: 'Update tahfidz record' })
   updateRecord(
+    @CurrentUser('id') userId: string,
+    @CurrentUser('role') role: string,
     @Param('id') id: string,
     @Body() dto: UpdateTahfidzRecordDto
   ) {
-    return this.tahfidzService.updateRecord(id, dto);
+    return this.tahfidzService.updateRecord(id, dto, userId, role);
   }
 
   @Delete(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.USTAD)
   @ApiOperation({ summary: 'Delete tahfidz record' })
-  deleteRecord(@Param('id') id: string) {
-    return this.tahfidzService.deleteRecord(id);
+  deleteRecord(
+    @CurrentUser('id') userId: string,
+    @CurrentUser('role') role: string,
+    @Param('id') id: string
+  ) {
+    return this.tahfidzService.deleteRecord(id, userId, role);
   }
 }

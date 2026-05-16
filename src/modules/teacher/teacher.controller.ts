@@ -81,8 +81,8 @@ export class TeacherController {
   assignStudents(
     @CurrentUser('tenant_uuid') t: string,
     @Param('id') id: string,
-    @Body('student_ids') studentIds: string[],
+    @Body() dto: any,
   ) {
-    return this.svc.assignStudents(t, id, studentIds);
+    return this.svc.assignStudents(t, id, dto);
   }
 }

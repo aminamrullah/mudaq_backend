@@ -23,12 +23,16 @@ export class RolesGuard implements CanActivate {
     }
 
     const { user } = context.switchToHttp().getRequest();
-    if (!user) throw new ForbiddenException('Akses ditolak');
+    if (!user) {
+      console.log('[RolesGuard] No user found in request');
+      throw new ForbiddenException('Akses ditolak');
+    }
 
     // SUPER_ADMIN has access to everything
     if (user.role === Role.SUPER_ADMIN) return true;
 
     if (!requiredRoles.includes(user.role)) {
+      console.log(`[RolesGuard] Forbidden: User role "${user.role}" not in required roles [${requiredRoles.join(', ')}] for path: ${context.switchToHttp().getRequest().url}`);
       throw new ForbiddenException('Anda tidak memiliki akses ke resource ini');
     }
 

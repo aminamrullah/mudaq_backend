@@ -15,7 +15,7 @@ import { normalizePhone } from '../../common/utils/phone.util';
 export class StudentService {
   private readonly logger = new Logger(StudentService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   async create(tenantUuid: string, dto: CreateStudentDto) {
     try {
@@ -29,7 +29,7 @@ export class StudentService {
         where: { id: tenantUuid },
         select: { max_students: true }
       });
-      
+
       const currentCount = await this.prisma.student.count({
         where: { tenant_uuid: tenantUuid, deleted_at: null }
       });
@@ -62,6 +62,8 @@ export class StudentService {
           'dormitory_room_id',
           'academic_year_id',
           'tahfidz_teacher_id',
+          'quran_teacher_id',
+          'kitab_teacher_id',
         ];
 
         uuidFields.forEach((field) => {
@@ -89,10 +91,10 @@ export class StudentService {
           data: { tenant_uuid: tenantUuid, student_id: student.id, balance: 0 },
         });
 
-        // Auto-create/link Walisantri account if phone is provided
-        if (data.parent_phone) {
-          await this.ensureWalisantriAccount(tx, tenantUuid, data.parent_phone, student.name, data.parent_email);
-        }
+        // [MODIFIED] Auto-creation disabled. Walisantri must register manually and claim the student.
+        // if (data.parent_phone) {
+        //   await this.ensureWalisantriAccount(tx, tenantUuid, data.parent_phone, student.name, data.parent_email);
+        // }
 
         return student;
       });
@@ -124,7 +126,21 @@ export class StudentService {
     dormitory_id?: string,
     dormitory_room_id?: string,
     tahfidz_teacher_id?: string,
+    quran_teacher_id?: string,
+    kitab_teacher_id?: string,
   ) {
+    const sanitizeUuid = (val: any) => {
+      if (val === 'undefined' || val === 'null' || val === '') return undefined;
+      return val;
+    };
+
+    classroom_id = sanitizeUuid(classroom_id);
+    dormitory_id = sanitizeUuid(dormitory_id);
+    dormitory_room_id = sanitizeUuid(dormitory_room_id);
+    tahfidz_teacher_id = sanitizeUuid(tahfidz_teacher_id);
+    quran_teacher_id = sanitizeUuid(quran_teacher_id);
+    kitab_teacher_id = sanitizeUuid(kitab_teacher_id);
+
     const where: any = { tenant_uuid: tenantUuid, deleted_at: null };
     if (search) {
       where.OR = [
@@ -144,6 +160,8 @@ export class StudentService {
     if (dormitory_id) where.dormitory_id = dormitory_id;
     if (dormitory_room_id) where.dormitory_room_id = dormitory_room_id;
     if (tahfidz_teacher_id) where.tahfidz_teacher_id = tahfidz_teacher_id;
+    if (quran_teacher_id) where.quran_teacher_id = quran_teacher_id;
+    if (kitab_teacher_id) where.kitab_teacher_id = kitab_teacher_id;
 
     const [data, total, total_all, tenantInfo] = await Promise.all([
       this.prisma.student.findMany({
@@ -166,13 +184,13 @@ export class StudentService {
 
     return {
       data,
-      meta: { 
-        total, 
-        total_all, 
+      meta: {
+        total,
+        total_all,
         max_quota: tenantInfo?.max_students || 0,
-        page, 
-        limit, 
-        totalPages: Math.ceil(total / limit) 
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit)
       },
     };
   }
@@ -202,7 +220,7 @@ export class StudentService {
     try {
       const current = await this.findOne(tenantUuid, id);
       const data = { ...dto };
-      
+
       // Normalize status if provided
       if (data.status) {
         data.status = data.status === 'active' ? 'AKTIF' : data.status.toUpperCase();
@@ -240,81 +258,81 @@ export class StudentService {
           await this.recordHistory(tx, tenantUuid, id, 'ROOM', current.dormitory_room_id, data.dormitory_room_id);
         }
 
-        // Logic for Walisantri Account Update/Create
-        const phoneToProcess = data.parent_phone || current.parent_phone;
-        if (phoneToProcess) {
-          if (data.parent_phone && data.parent_phone !== current.parent_phone) {
-            const normalizedNewPhone = normalizePhone(data.parent_phone);
-            const normalizedOldPhone = current.parent_phone ? normalizePhone(current.parent_phone) : null;
-
-            if (normalizedOldPhone) {
-              // Check if any other student uses the old phone
-              const otherStudentsCount = await tx.student.count({
-                where: {
-                  tenant_uuid: tenantUuid,
-                  parent_phone: normalizedOldPhone,
-                  id: { not: id },
-                  deleted_at: null,
-                },
-              });
-
-              if (otherStudentsCount === 0) {
-                // No one else uses the old phone.
-                const oldUser = await tx.user.findFirst({
-                  where: { phone: normalizedOldPhone, role: 'WALI_SANTRI', tenant_uuid: tenantUuid },
-                });
-
-                if (oldUser) {
-                  // Check if new phone is already taken
-                  const existingNewUser = await tx.user.findFirst({
-                    where: { phone: normalizedNewPhone },
-                  });
-
-                  if (!existingNewUser) {
-                    // New phone is free, update existing user
-                    const hashedPassword = await bcrypt.hash(normalizedNewPhone, 12);
-                    await tx.user.update({
-                      where: { id: oldUser.id },
-                      data: {
-                        phone: normalizedNewPhone,
-                        name: `Wali ${data.name || current.name}`,
-                        password: hashedPassword,
-                        email: (data.parent_email || oldUser.email || null) as any,
-                        deleted_at: null,
-                        is_active: true,
-                      },
-                    });
-                  } else {
-                    // New phone is already taken. Soft-delete the old user and link to the existing one.
-                    const timestamp = Date.now();
-                    await tx.user.update({
-                      where: { id: oldUser.id },
-                      data: { 
-                        deleted_at: new Date(), 
-                        is_active: false,
-                        phone: oldUser.phone ? `${oldUser.phone}_del_${timestamp}` : null,
-                        email: oldUser.email ? `${oldUser.email}_del_${timestamp}` : null,
-                      },
-                    });
-                    await this.ensureWalisantriAccount(tx, tenantUuid, normalizedNewPhone, data.name || current.name, data.parent_email);
-                  }
-                } else {
-                  await this.ensureWalisantriAccount(tx, tenantUuid, normalizedNewPhone, data.name || current.name, data.parent_email);
-                }
-              } else {
-                // Others use the old phone, just ensure the new one exists/is linked
-                await this.ensureWalisantriAccount(tx, tenantUuid, normalizedNewPhone, data.name || current.name, data.parent_email);
-              }
-            } else {
-              // No old phone, just ensure new one
-              await this.ensureWalisantriAccount(tx, tenantUuid, normalizedNewPhone, data.name || current.name, data.parent_email);
-            }
-          } else {
-            // Phone hasn't changed or wasn't provided in DTO (use current)
-            const normalizedPhone = normalizePhone(phoneToProcess);
-            await this.ensureWalisantriAccount(tx, tenantUuid, normalizedPhone, data.name || current.name, data.parent_email || current.parent_email || undefined);
-          }
-        }
+        // [MODIFIED] Auto-creation/update disabled. Walisantri manages their own account.
+        // const phoneToProcess = data.parent_phone || current.parent_phone;
+        // if (phoneToProcess) {
+        //   if (data.parent_phone && data.parent_phone !== current.parent_phone) {
+        //     const normalizedNewPhone = normalizePhone(data.parent_phone);
+        //     const normalizedOldPhone = current.parent_phone ? normalizePhone(current.parent_phone) : null;
+        // 
+        //     if (normalizedOldPhone) {
+        //       // Check if any other student uses the old phone
+        //       const otherStudentsCount = await tx.student.count({
+        //         where: {
+        //           tenant_uuid: tenantUuid,
+        //           parent_phone: normalizedOldPhone,
+        //           id: { not: id },
+        //           deleted_at: null,
+        //         },
+        //       });
+        // 
+        //       if (otherStudentsCount === 0) {
+        //         // No one else uses the old phone.
+        //         const oldUser = await tx.user.findFirst({
+        //           where: { phone: normalizedOldPhone, role: 'WALI_SANTRI', tenant_uuid: tenantUuid },
+        //         });
+        // 
+        //         if (oldUser) {
+        //           // Check if new phone is already taken
+        //           const existingNewUser = await tx.user.findFirst({
+        //             where: { phone: normalizedNewPhone },
+        //           });
+        // 
+        //           if (!existingNewUser) {
+        //             // New phone is free, update existing user
+        //             const hashedPassword = await bcrypt.hash(normalizedNewPhone, 12);
+        //             await tx.user.update({
+        //               where: { id: oldUser.id },
+        //               data: {
+        //                 phone: normalizedNewPhone,
+        //                 name: `Wali ${data.name || current.name}`,
+        //                 password: hashedPassword,
+        //                 email: (data.parent_email || oldUser.email || null) as any,
+        //                 deleted_at: null,
+        //                 is_active: true,
+        //               },
+        //             });
+        //           } else {
+        //             // New phone is already taken. Soft-delete the old user and link to the existing one.
+        //             const timestamp = Date.now();
+        //             await tx.user.update({
+        //               where: { id: oldUser.id },
+        //               data: {
+        //                 deleted_at: new Date(),
+        //                 is_active: false,
+        //                 phone: oldUser.phone ? `${oldUser.phone}_del_${timestamp}` : null,
+        //                 email: oldUser.email ? `${oldUser.email}_del_${timestamp}` : null,
+        //               },
+        //             });
+        //             await this.ensureWalisantriAccount(tx, tenantUuid, normalizedNewPhone, data.name || current.name, data.parent_email);
+        //           }
+        //         } else {
+        //           await this.ensureWalisantriAccount(tx, tenantUuid, normalizedNewPhone, data.name || current.name, data.parent_email);
+        //         }
+        //       } else {
+        //         // Others use the old phone, just ensure the new one exists/is linked
+        //         await this.ensureWalisantriAccount(tx, tenantUuid, normalizedNewPhone, data.name || current.name, data.parent_email);
+        //       }
+        //     } else {
+        //       // No old phone, just ensure new one
+        //       await this.ensureWalisantriAccount(tx, tenantUuid, normalizedNewPhone, data.name || current.name, data.parent_email);
+        //     }
+        //   } else {
+        //     // Phone hasn't changed or wasn't provided in DTO (use current)
+        //     const normalizedPhone = normalizePhone(phoneToProcess);
+        //     await this.ensureWalisantriAccount(tx, tenantUuid, normalizedPhone, data.name || current.name, data.parent_email || current.parent_email || undefined);
+        //   }
+        // }
 
         // Sanitize empty UUID strings to null
         const sanitizedData: any = { ...data };
@@ -324,6 +342,8 @@ export class StudentService {
           'dormitory_room_id',
           'academic_year_id',
           'tahfidz_teacher_id',
+          'quran_teacher_id',
+          'kitab_teacher_id',
         ];
 
         uuidFields.forEach((field) => {
@@ -355,8 +375,8 @@ export class StudentService {
 
   private async generateNextNis(tx: Prisma.TransactionClient, tenantUuid: string): Promise<string> {
     const students = await tx.student.findMany({
-      where: { 
-        tenant_uuid: tenantUuid, 
+      where: {
+        tenant_uuid: tenantUuid,
         AND: [
           { nis: { not: null } },
           { nis: { not: '' } }
@@ -390,12 +410,14 @@ export class StudentService {
     email?: string,
   ) {
     const normalizedPhone = normalizePhone(phone);
+    if (!normalizedPhone) return;
 
     const existingUser = await tx.user.findFirst({
       where: { phone: normalizedPhone },
     });
 
     if (!existingUser) {
+      this.logger.log(`Creating new Walisantri account for ${studentName} (${normalizedPhone})`);
       const hashedPassword = await bcrypt.hash(normalizedPhone, 12);
       await tx.user.create({
         data: {
@@ -411,7 +433,7 @@ export class StudentService {
       // User exists, check if it's from a different tenant
       if (existingUser.tenant_uuid && existingUser.tenant_uuid !== tenantUuid) {
         throw new ConflictException(
-          `Nomor WhatsApp ${normalizedPhone} sudah terdaftar di pesantren lain sebagai Wali Santri.`,
+          `Nomor WhatsApp ${normalizedPhone} (Wali ${studentName}) sudah terdaftar di pesantren lain. Satu nomor WhatsApp hanya bisa digunakan di satu pesantren.`,
         );
       }
 
@@ -431,13 +453,14 @@ export class StudentService {
 
       // If user exists but was soft-deleted or doesn't have a tenant, reactivate/link it
       if (existingUser.deleted_at || !existingUser.tenant_uuid) {
+        this.logger.log(`Linking existing user ${normalizedPhone} to tenant ${tenantUuid}`);
         await tx.user.update({
           where: { id: existingUser.id },
-          data: { 
+          data: {
             tenant_uuid: tenantUuid,
             deleted_at: null,
             is_active: true,
-            role: 'WALI_SANTRI' // Ensure role is correct
+            role: existingUser.role || 'WALI_SANTRI'
           },
         });
       }
@@ -468,14 +491,14 @@ export class StudentService {
 
   async remove(tenantUuid: string, id: string) {
     const student = await this.findOne(tenantUuid, id);
-    
+
     return await this.prisma.$transaction(async (tx) => {
       const timestamp = Date.now();
-      
+
       // Soft delete student and free up unique fields
       const deletedStudent = await tx.student.update({
         where: { id },
-        data: { 
+        data: {
           deleted_at: new Date(),
           nis: student.nis ? `${student.nis}_del_${timestamp}` : null,
           nisn: student.nisn ? `${student.nisn}_del_${timestamp}` : null,
@@ -487,7 +510,7 @@ export class StudentService {
       // Handle Walisantri account cleanup
       if (student.parent_phone) {
         const normalizedPhone = normalizePhone(student.parent_phone);
-        
+
         // Check if any other ACTIVE student uses this phone
         const otherStudentsCount = await tx.student.count({
           where: {
@@ -501,19 +524,19 @@ export class StudentService {
         if (otherStudentsCount === 0) {
           // No other active students use this phone, soft-delete the walisantri user and free up phone/email
           const walisantri = await tx.user.findFirst({
-            where: { 
-              phone: normalizedPhone, 
-              role: 'WALI_SANTRI', 
+            where: {
+              phone: normalizedPhone,
+              role: 'WALI_SANTRI',
               tenant_uuid: tenantUuid,
-              deleted_at: null 
+              deleted_at: null
             }
           });
 
           if (walisantri) {
             await tx.user.update({
               where: { id: walisantri.id },
-              data: { 
-                deleted_at: new Date(), 
+              data: {
+                deleted_at: new Date(),
                 is_active: false,
                 phone: walisantri.phone ? `${walisantri.phone}_del_${timestamp}` : null,
                 email: walisantri.email ? `${walisantri.email}_del_${timestamp}` : null,
@@ -535,45 +558,78 @@ export class StudentService {
 
     const results = { success: 0, failed: 0, errors: [] as string[] };
 
+    // Helper to find value by multiple possible keys (case-insensitive, trimmed)
+    const getValue = (row: any, keys: string[]) => {
+      const rowKeys = Object.keys(row);
+      for (const key of keys) {
+        const foundKey = rowKeys.find(k => k.toLowerCase().trim() === key.toLowerCase().trim());
+        if (foundKey) return row[foundKey];
+      }
+      return undefined;
+    };
+
+    // Helper to format numeric values from Excel (handles scientific notation)
+    const formatValue = (val: any): string | undefined => {
+      if (val === undefined || val === null) return undefined;
+      const str = val.toString();
+      if (str.includes('E') || str.includes('e')) {
+        const num = Number(val);
+        if (!isNaN(num)) {
+          return num.toLocaleString('fullwide', { useGrouping: false });
+        }
+      }
+      return str.trim();
+    };
+
     for (const row of data as any[]) {
       try {
         const studentDto: CreateStudentDto = {
-          name: row['Nama'] || row['name'],
-          nis: row['NIS']?.toString() || row['nis']?.toString(),
-          nisn: row['NISN']?.toString() || row['nisn']?.toString(),
-          nik: row['NIK']?.toString() || row['nik']?.toString(),
-          gender:
-            row['Jenis Kelamin'] === 'Perempuan' || row['gender'] === 'P'
-              ? 'P'
-              : 'L',
-          birth_place: row['Tempat Lahir'] || row['birth_place'],
-          birth_date: row['Tanggal Lahir'] || row['birth_date'],
-          address: row['Alamat'] || row['address'],
-          father_name: row['Nama Ayah'] || row['father_name'],
-          father_job: row['Pekerjaan Ayah'] || row['father_job'],
-          mother_name: row['Nama Ibu'] || row['mother_name'],
-          mother_job: row['Pekerjaan Ibu'] || row['mother_job'],
-          parent_phone:
-            row['No HP Wali']?.toString() || row['phone']?.toString(),
+          name: getValue(row, ['Nama', 'Nama Lengkap', 'name', 'Full Name']),
+          nis: formatValue(getValue(row, ['NIS', 'nis', 'Nomor Induk'])),
+          nisn: formatValue(getValue(row, ['NISN', 'nisn'])),
+          nik: formatValue(getValue(row, ['NIK', 'nik', 'No. KTP'])) || '',
+          gender: ['P', 'Perempuan', 'Female', 'Wanita'].includes(getValue(row, ['Jenis Kelamin', 'Gender', 'JK']) || '') ? 'P' : 'L',
+          birth_place: getValue(row, ['Tempat Lahir', 'birth_place', 'PoB']),
+          birth_date: getValue(row, ['Tanggal Lahir', 'birth_date', 'DoB']),
+          address: getValue(row, ['Alamat', 'address', 'Home Address']),
+          father_name: getValue(row, ['Nama Ayah', 'father_name', 'Father']),
+          father_job: getValue(row, ['Pekerjaan Ayah', 'father_job', 'Father Job']),
+          mother_name: getValue(row, ['Nama Ibu', 'mother_name', 'Mother']),
+          mother_job: getValue(row, ['Pekerjaan Ibu', 'mother_job', 'Mother Job']),
+          parent_phone: formatValue(getValue(row, ['No HP Wali', 'No. HP', 'WA Wali', 'phone', 'WhatsApp', 'HP', 'Telepon'])),
+          parent_email: getValue(row, ['Email Wali', 'Email', 'parent_email'])?.toString(),
           status: 'AKTIF',
           // Optional physical data
-          weight: row['Berat'] ? parseInt(row['Berat']) : undefined,
-          height: row['Tinggi'] ? parseInt(row['Tinggi']) : undefined,
-          last_education: row['Pendidikan Terakhir'] || row['last_education'],
-          entry_year: row['Tahun Masuk'] ? parseInt(row['Tahun Masuk']) : undefined,
+          weight: parseInt(getValue(row, ['Berat', 'weight', 'BB']) || '0') || undefined,
+          height: parseInt(getValue(row, ['Tinggi', 'height', 'TB']) || '0') || undefined,
+          last_education: getValue(row, ['Pendidikan Terakhir', 'last_education', 'Education']),
+          entry_year: parseInt(getValue(row, ['Tahun Masuk', 'entry_year', 'Angkatan']) || new Date().getFullYear().toString()),
           // Address details
-          province: row['Provinsi'] || row['province'],
-          city: row['Kota'] || row['city'],
-          district: row['Kecamatan'] || row['district'],
-          village: row['Desa'] || row['village'],
+          province: getValue(row, ['Provinsi', 'province']),
+          city: getValue(row, ['Kota', 'city', 'Kabupaten']),
+          district: getValue(row, ['Kecamatan', 'district']),
+          village: getValue(row, ['Desa', 'village', 'Kelurahan']),
         };
+
+        if (!studentDto.name) {
+          throw new Error('Kolom Nama kosong atau tidak ditemukan');
+        }
+        if (!studentDto.nik) {
+          throw new Error('Kolom NIK kosong atau tidak ditemukan');
+        }
+        if (!studentDto.birth_date) {
+          throw new Error('Kolom Tanggal Lahir kosong atau tidak ditemukan');
+        }
+        if (!studentDto.mother_name) {
+          throw new Error('Kolom Nama Ibu kosong atau tidak ditemukan');
+        }
 
         await this.create(tenantUuid, studentDto);
         results.success++;
       } catch (err) {
         results.failed++;
         results.errors.push(
-          `Baris ${row['Nama'] || 'Unknown'}: ${err.message}`,
+          `Baris ${row['Nama'] || row['name'] || 'Tidak Diketahui'}: ${err.message}`,
         );
       }
     }
@@ -637,7 +693,7 @@ export class StudentService {
       data: { status },
     });
   }
-  
+
   async createPermission(tenantUuid: string, studentId: string, data: any) {
     return this.prisma.studentPermission.create({
       data: {
@@ -672,7 +728,7 @@ export class StudentService {
 
   async bulkMutate(tenantUuid: string, dto: BulkMutateStudentDto) {
     const { student_ids, classroom_id, dormitory_id, dormitory_room_id, academic_year_id, status, notes } = dto;
-    
+
     return await this.prisma.$transaction(async (tx) => {
       const results = [];
       const now = new Date();
@@ -685,7 +741,7 @@ export class StudentService {
         if (!current) continue;
 
         const updateData: any = {};
-        
+
         // Track and Update Status
         if (status && status !== current.status) {
           const newStatus = status === 'active' ? 'AKTIF' : status.toUpperCase();

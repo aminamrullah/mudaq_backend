@@ -30,8 +30,13 @@ export class WalletService {
     });
 
     // 2. Get existing wallets
+    const walletWhere: any = { tenant_uuid: tenantUuid };
+    if (parentPhone) {
+      walletWhere.student = { parent_phone: parentPhone };
+    }
+
     const wallets = await this.prisma.wallet.findMany({
-      where: { tenant_uuid: tenantUuid },
+      where: walletWhere,
       include: {
         student: {
           select: { id: true, name: true, nis: true, parent_phone: true },

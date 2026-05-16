@@ -75,8 +75,9 @@ export class TeachingJournalController {
     @CurrentUser('id') userId: string,
     @Param('teacherId') tid: string,
     @Query('month') m?: string,
+    @Query('classroom_id') cid?: string,
   ) {
-    return this.svc.findByTeacher(t, role, userId, tid, m);
+    return this.svc.findByTeacher(t, role, userId, tid, m, cid);
   }
 
   @Delete(':id')

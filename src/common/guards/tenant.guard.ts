@@ -17,6 +17,9 @@ export class TenantGuard implements CanActivate {
     if (user.role === 'SUPER_ADMIN') return true;
 
     if (!user.tenant_uuid) {
+      // Walisantri might not have a tenant linked yet (before claiming a student)
+      if (user.role === 'WALI_SANTRI') return true;
+      
       throw new ForbiddenException(
         'Tenant tidak ditemukan. Hubungi administrator.',
       );

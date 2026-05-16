@@ -74,6 +74,8 @@ export class TeacherService {
         user: { select: { email: true, phone: true, role: true, base_salary: true } },
         classrooms: { select: { id: true, name: true } },
         tahfidz_students: { select: { id: true, name: true, nis: true } },
+        quran_students: { select: { id: true, name: true, nis: true } },
+        kitab_students: { select: { id: true, name: true, nis: true } },
         schedules: {
           include: {
             subject: { select: { name: true } },
@@ -148,10 +150,18 @@ export class TeacherService {
     const teacher = await this.findOne(tenantUuid, id);
     
     return this.prisma.$transaction(async (tx) => {
-      // Clear tahfidz_teacher_id for students assigned to this teacher
+      // Clear teacher fields for students assigned to this teacher
       await tx.student.updateMany({
         where: { tenant_uuid: tenantUuid, tahfidz_teacher_id: id },
         data: { tahfidz_teacher_id: null },
+      });
+      await tx.student.updateMany({
+        where: { tenant_uuid: tenantUuid, quran_teacher_id: id },
+        data: { quran_teacher_id: null },
+      });
+      await tx.student.updateMany({
+        where: { tenant_uuid: tenantUuid, kitab_teacher_id: id },
+        data: { kitab_teacher_id: null },
       });
 
       const timestamp = Date.now();
@@ -190,10 +200,13 @@ export class TeacherService {
       },
     });
     if (!teacher) throw new NotFoundException('Profil guru tidak ditemukan');
+    
+    // Also explicitly include the new fields if they aren't already included by default findFirst
     return teacher;
   }
 
-  async assignStudents(tenantUuid: string, teacherId: string, studentIds: string[]) {
+  async assignStudents(tenantUuid: string, teacherId: string, dto: any) {
+    const { student_ids, quran_student_ids, kitab_student_ids } = dto;
     // Verify teacher exists
     const teacher = await this.prisma.teacher.findFirst({
       where: { id: teacherId, tenant_uuid: tenantUuid, deleted_at: null },
@@ -201,24 +214,46 @@ export class TeacherService {
     if (!teacher) throw new NotFoundException('Guru tidak ditemukan');
 
     return this.prisma.$transaction(async (tx) => {
-      // 1. Remove current assignments for this teacher
-      await tx.student.updateMany({
-        where: { tenant_uuid: tenantUuid, tahfidz_teacher_id: teacherId },
-        data: { tahfidz_teacher_id: null },
-      });
-
-      // 2. Add new assignments
-      if (studentIds.length > 0) {
+      if (student_ids !== undefined) {
         await tx.student.updateMany({
-          where: { 
-            tenant_uuid: tenantUuid, 
-            id: { in: studentIds } 
-          },
-          data: { tahfidz_teacher_id: teacherId },
+          where: { tenant_uuid: tenantUuid, tahfidz_teacher_id: teacherId },
+          data: { tahfidz_teacher_id: null },
         });
+        if (student_ids.length > 0) {
+          await tx.student.updateMany({
+            where: { tenant_uuid: tenantUuid, id: { in: student_ids } },
+            data: { tahfidz_teacher_id: teacherId },
+          });
+        }
+      }
+
+      if (quran_student_ids !== undefined) {
+        await tx.student.updateMany({
+          where: { tenant_uuid: tenantUuid, quran_teacher_id: teacherId },
+          data: { quran_teacher_id: null },
+        });
+        if (quran_student_ids.length > 0) {
+          await tx.student.updateMany({
+            where: { tenant_uuid: tenantUuid, id: { in: quran_student_ids } },
+            data: { quran_teacher_id: teacherId },
+          });
+        }
+      }
+
+      if (kitab_student_ids !== undefined) {
+        await tx.student.updateMany({
+          where: { tenant_uuid: tenantUuid, kitab_teacher_id: teacherId },
+          data: { kitab_teacher_id: null },
+        });
+        if (kitab_student_ids.length > 0) {
+          await tx.student.updateMany({
+            where: { tenant_uuid: tenantUuid, id: { in: kitab_student_ids } },
+            data: { kitab_teacher_id: teacherId },
+          });
+        }
       }
       
-      return { success: true, count: studentIds.length };
+      return { success: true };
     });
   }
 }

@@ -44,9 +44,11 @@ export class UserService {
     });
   }
 
-  async findAll(tenantUuid: string | null, page = 1, limit = 20) {
+  async findAll(tenantUuid: string | null, page = 1, limit = 50, role?: string) {
     const where: any = { deleted_at: null };
     if (tenantUuid) where.tenant_uuid = tenantUuid;
+    if (role) where.role = role;
+
     const [data, total] = await Promise.all([
       this.prisma.user.findMany({
         where,
@@ -68,8 +70,34 @@ export class UserService {
       }),
       this.prisma.user.count({ where }),
     ]);
+
+    // Attach students for WALI_SANTRI
+    const enrichedData = await Promise.all(
+      data.map(async (user) => {
+        if (user.role === 'WALI_SANTRI' && user.phone) {
+          const normalized = user.phone.replace(/[^0-9]/g, '');
+          const variants = [
+            normalized,
+            normalized.startsWith('08') ? '628' + normalized.slice(2) : normalized,
+            normalized.startsWith('628') ? '0' + normalized.slice(2) : normalized,
+          ].filter((v, i, a) => a.indexOf(v) === i);
+
+          const students = await this.prisma.student.findMany({
+            where: {
+              tenant_uuid: tenantUuid || undefined,
+              parent_phone: { in: variants },
+              deleted_at: null,
+            },
+            select: { id: true, name: true, nis: true },
+          });
+          return { ...user, students };
+        }
+        return user;
+      }),
+    );
+
     return {
-      data,
+      data: enrichedData,
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   }

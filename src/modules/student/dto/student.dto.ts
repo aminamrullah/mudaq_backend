@@ -11,26 +11,26 @@ export class CreateStudentDto {
   @ApiProperty() @IsNotEmpty() @IsString() name: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() nis?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() nisn?: string;
-  @ApiProperty({ required: false }) @IsOptional() @IsString() nik?: string;
+  @ApiProperty() @IsNotEmpty() @IsString() nik: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() gender?: string;
   @ApiProperty({ required: false })
   @IsOptional()
   @IsString()
   birth_place?: string;
-  @ApiProperty({ required: false })
-  @IsOptional()
+  @ApiProperty()
+  @IsNotEmpty()
   @IsString()
-  birth_date?: string;
+  birth_date: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() address?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() photo?: string;
   @ApiProperty({ required: false })
   @IsOptional()
   @IsString()
   father_name?: string;
-  @ApiProperty({ required: false })
-  @IsOptional()
+  @ApiProperty()
+  @IsNotEmpty()
   @IsString()
-  mother_name?: string;
+  mother_name: string;
   @ApiProperty({ required: false })
   @IsOptional()
   @IsString()
@@ -57,6 +57,8 @@ export class CreateStudentDto {
   academic_year_id?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() status?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() tahfidz_teacher_id?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() quran_teacher_id?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() kitab_teacher_id?: string;
   @ApiProperty({ required: false }) @IsOptional() entry_year?: number;
   @ApiProperty({ required: false }) @IsOptional() @IsDateString() graduation_date?: string;
 

@@ -2,10 +2,10 @@ import { IsNotEmpty, IsOptional, IsString, IsDateString, IsUUID, IsNumber } from
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateTeachingJournalDto {
-  @ApiProperty()
+  @ApiProperty({ required: false })
   @IsUUID()
-  @IsNotEmpty()
-  teacher_id: string;
+  @IsOptional()
+  teacher_id?: string;
 
   @ApiProperty()
   @IsUUID()
@@ -23,6 +23,11 @@ export class CreateTeachingJournalDto {
   material: string;
 
   @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  topic?: string;
+
+  @ApiProperty({ required: false })
   @IsNumber()
   @IsOptional()
   student_count?: number;
@@ -38,6 +43,11 @@ export class UpdateTeachingJournalDto {
   @IsString()
   @IsOptional()
   material?: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  topic?: string;
 
   @ApiProperty({ required: false })
   @IsNumber()

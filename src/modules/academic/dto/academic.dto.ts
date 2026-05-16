@@ -175,6 +175,11 @@ export class CreateQuestionBankDto {
   @ApiPropertyOptional()
   @IsString()
   @IsOptional()
+  kitab_id?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
   description?: string;
 }
 
@@ -253,7 +258,7 @@ export class CreateAssignmentDto {
   @ApiProperty() @IsString() @IsNotEmpty() subject_id: string;
   @ApiProperty() @IsString() @IsNotEmpty() classroom_id: string;
   @ApiProperty() @IsDateString() @IsNotEmpty() date: string;
-  @ApiProperty() @IsArray() grades: AssignmentGradeItemDto[];
+  @ApiPropertyOptional() @IsArray() @IsOptional() grades?: AssignmentGradeItemDto[];
 }
 
 export class AssignmentGradeItemDto {
@@ -273,6 +278,7 @@ export class CreateExamScheduleDto {
   @ApiProperty() @IsString() @IsNotEmpty() end_time: string;
   @ApiPropertyOptional() @IsString() @IsOptional() teacher_id?: string;
   @ApiPropertyOptional() @IsString() @IsOptional() supervisor_id?: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() kitab_id?: string;
 }
 
 export class UpdateExamScheduleDto extends PartialType(CreateExamScheduleDto) {
@@ -282,7 +288,8 @@ export class UpdateExamScheduleDto extends PartialType(CreateExamScheduleDto) {
 }
 
 export class GenerateReportCardDto {
-  @ApiProperty() @IsString() classroom_id: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() id?: string;
+  @ApiPropertyOptional() @IsString() @IsOptional() classroom_id?: string;
   @ApiPropertyOptional() @IsString() @IsOptional() academic_year_id?: string;
   @ApiPropertyOptional() @IsString() @IsOptional() period_id?: string;
   @ApiPropertyOptional() @IsString() @IsOptional() student_id?: string;
@@ -296,6 +303,7 @@ export class UpdateReportCardDto {
   @ApiPropertyOptional() @IsNumber() @IsOptional() attendance_sick?: number;
   @ApiPropertyOptional() @IsNumber() @IsOptional() attendance_izin?: number;
   @ApiPropertyOptional() @IsNumber() @IsOptional() attendance_alpa?: number;
+  @ApiPropertyOptional() @IsString() @IsOptional() promotion_status?: string;
 }
 
 export class SaveReportCardDto {

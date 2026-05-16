@@ -1,9 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { XenditService } from '../tenant/xendit.service';
 
 @Injectable()
 export class DashboardService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private xenditService: XenditService,
+  ) {}
 
   async getStats(tenantUuid: string) {
     if (!tenantUuid) {
@@ -129,7 +133,7 @@ export class DashboardService {
       }),
       this.prisma.pesantren.findUnique({
         where: { id: tenantUuid },
-        select: { max_students: true, slug: true, ppdb_is_active: true }
+        select: { max_students: true, slug: true, ppdb_is_active: true, name: true, logo: true, description: true }
       }),
       this.prisma.studentPermission.count({
         where: { tenant_uuid: tenantUuid, status: 'pending' }
@@ -193,6 +197,9 @@ export class DashboardService {
         },
       },
       pesantren_slug: tenantInfo?.slug,
+      pesantren_name: tenantInfo?.name,
+      pesantren_logo: tenantInfo?.logo,
+      pesantren_description: tenantInfo?.description,
       ppdb_is_active: tenantInfo?.ppdb_is_active || false,
       tenant_wallet_balance: Number(tenantWallet?.balance || 0),
     };
@@ -279,6 +286,104 @@ export class DashboardService {
     };
   }
 
+  async getSuperAdminFinanceStats() {
+    // 1. Get Xendit Balance
+    const xenditBalanceData = await this.xenditService.getBalance();
+    const xenditBalance = xenditBalanceData?.balance || 0;
+
+    // 2. Aggregate Transactions (Payment Gateway)
+    const transactionStats = await this.prisma.transaction.aggregate({
+      where: { status: 'success' },
+      _sum: {
+        amount_paid: true,
+        platform_fee: true,
+        xendit_fee: true,
+      },
+    });
+
+    // 3. Aggregate TopupLogs (Payment Gateway)
+    const topupStats = await this.prisma.topupLog.aggregate({
+      where: { status: 'success' },
+      _sum: {
+        amount: true,
+        platform_fee: true,
+        xendit_fee: true,
+      },
+    });
+
+    // Calculate Gross & Net Income
+    const txPlatformFee = Number(transactionStats._sum.platform_fee || 0);
+    const txXenditFee = Number(transactionStats._sum.xendit_fee || 0);
+    const topupPlatformFee = Number(topupStats._sum.platform_fee || 0);
+    const topupXenditFee = Number(topupStats._sum.xendit_fee || 0);
+
+    const grossIncome = txPlatformFee + topupPlatformFee;
+    const totalXenditFee = txXenditFee + topupXenditFee;
+    const netIncome = grossIncome - totalXenditFee;
+
+    // 4. Get recent transactions related to payment gateway
+    const recentTransactions = await this.prisma.transaction.findMany({
+      where: { payment_method: 'gateway' },
+      orderBy: { payment_date: 'desc' },
+      take: 10,
+      include: {
+        pesantren: { select: { name: true } },
+      },
+    });
+
+    const recentTopups = await this.prisma.topupLog.findMany({
+      orderBy: { created_at: 'desc' },
+      take: 10,
+      include: {
+        pesantren: { select: { name: true } },
+      },
+    });
+
+    return {
+      xendit_balance: xenditBalance,
+      internal_balance: netIncome, // Net income is effectively the superadmin's internal balance from these fees.
+      gross_income: grossIncome,
+      net_income: netIncome,
+      total_xendit_fee: totalXenditFee,
+      breakdown: {
+        transactions: {
+          platform_fee: txPlatformFee,
+          xendit_fee: txXenditFee,
+          net: txPlatformFee - txXenditFee,
+          total_volume: Number(transactionStats._sum.amount_paid || 0),
+        },
+        topups: {
+          platform_fee: topupPlatformFee,
+          xendit_fee: topupXenditFee,
+          net: topupPlatformFee - topupXenditFee,
+          total_volume: Number(topupStats._sum.amount || 0),
+        },
+      },
+      recent_gateway_transactions: recentTransactions.map(t => ({
+        id: t.id,
+        type: 'TRANSACTION',
+        pesantren_name: t.pesantren?.name,
+        amount: Number(t.amount_paid),
+        platform_fee: Number(t.platform_fee),
+        xendit_fee: Number(t.xendit_fee),
+        net: Number(t.platform_fee) - Number(t.xendit_fee),
+        date: t.payment_date,
+        status: t.status,
+      })),
+      recent_topups: recentTopups.map(t => ({
+        id: t.id,
+        type: 'TOPUP',
+        pesantren_name: t.pesantren?.name,
+        amount: Number(t.amount),
+        platform_fee: Number(t.platform_fee),
+        xendit_fee: Number(t.xendit_fee),
+        net: Number(t.platform_fee) - Number(t.xendit_fee),
+        date: t.created_at,
+        status: t.status,
+      })),
+    };
+  }
+
   async getTeacherStats(tenantUuid: string, userId: string) {
     const now = new Date();
     const year = now.getFullYear();
@@ -315,7 +420,9 @@ export class DashboardService {
       todayAttendance,
       recentJournals,
       recentTahfidz,
-      classAttendance
+      classAttendance,
+      totalJournals,
+      totalAbsenceGroups
     ] = await Promise.all([
       // Schedules for today
       this.prisma.schedule.findMany({
@@ -346,8 +453,6 @@ export class DashboardService {
         take: 5
       }),
       // If homeroom, get today's attendance for their class
-      // Note: Prisma groupBy doesn't support relation filters in some versions,
-      // so we use findMany and group manually or just fetch statuses.
       teacher.classrooms.length > 0 
         ? this.prisma.attendance.findMany({
             where: { 
@@ -357,7 +462,19 @@ export class DashboardService {
             },
             select: { status: true }
           })
-        : Promise.resolve([])
+        : Promise.resolve([]),
+      // Total journals
+      this.prisma.teachingJournal.count({
+        where: { tenant_uuid: tenantUuid, teacher_id: teacher.id }
+      }),
+      // Total attendance sessions filled
+      this.prisma.attendance.groupBy({
+        by: ['date', 'schedule_id'],
+        where: { 
+          tenant_uuid: tenantUuid,
+          schedule: { teacher_id: teacher.id }
+        }
+      })
     ]);
 
     // Process class attendance
@@ -368,6 +485,10 @@ export class DashboardService {
       }
     });
 
+    const totalAbsences = totalAbsenceGroups.length;
+    // Calculate mock performance (can be improved later with real logic)
+    const performance = totalAbsences > 0 ? Math.min(100, Math.round((totalJournals / totalAbsences) * 100)) : 100;
+
     return {
       teacher_name: teacher.name,
       homeroom_class: teacher.classrooms[0] || null,
@@ -375,7 +496,12 @@ export class DashboardService {
       my_attendance: todayAttendance,
       recent_journals: recentJournals,
       recent_tahfidz: recentTahfidz,
-      class_attendance_today: classAttendanceMap
+      class_attendance_today: classAttendanceMap,
+      stats: {
+        total_journals: totalJournals,
+        total_absences: totalAbsences,
+        performance: performance > 0 ? performance : 100
+      }
     };
   }
 }

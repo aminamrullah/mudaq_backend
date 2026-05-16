@@ -31,4 +31,10 @@ export class DashboardController {
   getSuperAdminStats() {
     return this.svc.getSuperAdminStats();
   }
+
+  @Get('super-admin/finance')
+  @ApiOperation({ summary: 'Get super admin financial stats' })
+  getSuperAdminFinanceStats() {
+    return this.svc.getSuperAdminFinanceStats();
+  }
 }

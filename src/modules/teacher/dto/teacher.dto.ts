@@ -30,6 +30,14 @@ export class CreateTeacherDto {
   @IsOptional()
   @IsBoolean()
   is_tahfidz_teacher?: boolean;
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  can_manage_quran?: boolean;
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  can_manage_kitab?: boolean;
   @ApiProperty({ required: false }) @IsOptional() @IsString() user_id?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() email?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() password?: string;

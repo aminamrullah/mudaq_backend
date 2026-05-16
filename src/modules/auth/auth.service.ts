@@ -47,6 +47,12 @@ export class AuthService {
             can_manage_landing_page: true,
           },
         },
+        koperasi_outlet: {
+          select: {
+            id: true,
+            name: true,
+          }
+        },
       },
     });
 
@@ -79,6 +85,8 @@ export class AuthService {
     let isHomeroom = false;
     let homeroomClasses: string[] = [];
     let isTahfidzTeacher = false;
+    let canManageQuran = false;
+    let canManageKitab = false;
     if (user.role === 'USTAD') {
       const teacherProfile = await this.prisma.teacher.findFirst({
         where: { user_id: user.id },
@@ -87,6 +95,8 @@ export class AuthService {
       isHomeroom = (teacherProfile?.classrooms?.length || 0) > 0;
       homeroomClasses = teacherProfile?.classrooms?.map((c) => c.name) || [];
       isTahfidzTeacher = teacherProfile?.is_tahfidz_teacher || false;
+      canManageQuran = teacherProfile?.can_manage_quran || false;
+      canManageKitab = teacherProfile?.can_manage_kitab || false;
     }
 
     const tokens = await this.generateTokens(user);
@@ -122,7 +132,10 @@ export class AuthService {
         is_homeroom: isHomeroom,
         homeroom_classes: homeroomClasses,
         is_tahfidz_teacher: isTahfidzTeacher,
+        can_manage_quran: canManageQuran,
+        can_manage_kitab: canManageKitab,
         koperasi_outlet_id: user.koperasi_outlet_id,
+        koperasi_outlet_name: (user as any).koperasi_outlet?.name,
       },
     };
   }
@@ -133,6 +146,22 @@ export class AuthService {
     const normalizedPhone = normalizePhone(cleanPhone);
     const legacyPhone = normalizedPhone.startsWith('628') ? '0' + normalizedPhone.slice(2) : cleanPhone;
 
+    // [MODIFIED] Find tenant_uuid to route WhatsApp message
+    let tenantUuid = dto.tenant_uuid;
+    
+    // Fallback: search student by phone to auto-detect tenant
+    if (!tenantUuid) {
+      const student = await this.prisma.student.findFirst({
+        where: { 
+          parent_phone: { in: [normalizedPhone, legacyPhone, cleanPhone, dto.phone].filter(Boolean) as string[] },
+          deleted_at: null 
+        },
+      });
+      if (student) {
+        tenantUuid = student.tenant_uuid;
+      }
+    }
+
     let user = await this.prisma.user.findFirst({
       where: {
         phone: { in: [normalizedPhone, legacyPhone, cleanPhone, dto.phone].filter(Boolean) as string[] },
@@ -141,25 +170,25 @@ export class AuthService {
     });
 
     if (!user) {
-      // Lazy creation: check if this phone exists in Student table
-      const student = await this.prisma.student.findFirst({
-        where: { parent_phone: { in: [normalizedPhone, legacyPhone, cleanPhone, dto.phone].filter(Boolean) as string[] }, deleted_at: null },
+      // Auto-registration for Walisantri
+      const hashedPassword = await bcrypt.hash(normalizedPhone, 12);
+      user = await this.prisma.user.create({
+        data: {
+          name: `Walisantri`,
+          email: `${normalizedPhone}@walisantri.com`,
+          phone: normalizedPhone,
+          password: hashedPassword,
+          role: 'WALI_SANTRI',
+          tenant_uuid: tenantUuid, // Set if found!
+        },
       });
-
-      if (student) {
-        // Create the user account automatically
-        const hashedPassword = await bcrypt.hash(normalizedPhone, 12);
-        user = await this.prisma.user.create({
-          data: {
-            name: `Wali ${student.name}`,
-            email: `${normalizedPhone}@walisantri.com`,
-            phone: normalizedPhone,
-            password: hashedPassword,
-            role: 'WALI_SANTRI',
-            tenant_uuid: student.tenant_uuid,
-          },
-        });
-      }
+    } else if (tenantUuid && !user.tenant_uuid) {
+      // Update tenant if user exists but has no tenant linked
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { tenant_uuid: tenantUuid },
+      });
+      user.tenant_uuid = tenantUuid;
     }
 
     if (!user) {
@@ -175,7 +204,7 @@ export class AuthService {
       create: { phone: normalizedPhone, otp, expires_at: expiresAt },
     });
 
-    // Send WA via Unified WhatsApp Service (Using Tenant's WA)
+    // Send WA via Unified WhatsApp Service (Using Tenant's WA or Fallback to System)
     await this.whatsappService.sendMessage(
       normalizedPhone,
       `*KODE OTP LOGIN*
@@ -183,12 +212,9 @@ export class AuthService {
 Kode verifikasi Anda adalah: *${otp}*
 
 Berlaku selama 5 menit. Jangan berikan kode ini kepada siapapun.`,
-      user.tenant_uuid,
+      tenantUuid || user.tenant_uuid,
       true // Priority: kirim paling depan antrian
     );
-
-
-
 
     return { message: 'OTP telah dikirim ke WhatsApp Anda' };
   }
@@ -229,6 +255,12 @@ Berlaku selama 5 menit. Jangan berikan kode ini kepada siapapun.`,
             logo: true,
           },
         },
+        koperasi_outlet: {
+          select: {
+            id: true,
+            name: true,
+          }
+        },
       },
     });
 
@@ -253,6 +285,8 @@ Berlaku selama 5 menit. Jangan berikan kode ini kepada siapapun.`,
     let isHomeroom = false;
     let homeroomClasses: string[] = [];
     let isTahfidzTeacher = false;
+    let canManageQuran = false;
+    let canManageKitab = false;
     if (user.role === 'USTAD') {
       const teacherProfile = await this.prisma.teacher.findFirst({
         where: { user_id: user.id },
@@ -261,6 +295,8 @@ Berlaku selama 5 menit. Jangan berikan kode ini kepada siapapun.`,
       isHomeroom = (teacherProfile?.classrooms?.length || 0) > 0;
       homeroomClasses = teacherProfile?.classrooms?.map((c) => c.name) || [];
       isTahfidzTeacher = teacherProfile?.is_tahfidz_teacher || false;
+      canManageQuran = teacherProfile?.can_manage_quran || false;
+      canManageKitab = teacherProfile?.can_manage_kitab || false;
     }
 
     const tokens = await this.generateTokens(user);
@@ -297,7 +333,10 @@ Berlaku selama 5 menit. Jangan berikan kode ini kepada siapapun.`,
         is_homeroom: isHomeroom,
         homeroom_classes: homeroomClasses,
         is_tahfidz_teacher: isTahfidzTeacher,
+        can_manage_quran: canManageQuran,
+        can_manage_kitab: canManageKitab,
         koperasi_outlet_id: user.koperasi_outlet_id,
+        koperasi_outlet_name: (user as any).koperasi_outlet?.name,
       },
     };
   }

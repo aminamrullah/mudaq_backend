@@ -68,6 +68,8 @@ export class StudentController {
   @ApiQuery({ name: 'dormitory_id', required: false })
   @ApiQuery({ name: 'dormitory_room_id', required: false })
   @ApiQuery({ name: 'tahfidz_teacher_id', required: false })
+  @ApiQuery({ name: 'quran_teacher_id', required: false })
+  @ApiQuery({ name: 'kitab_teacher_id', required: false })
   findAll(
     @CurrentUser('tenant_uuid') t: string,
     @Query('page') p?: number,
@@ -78,8 +80,10 @@ export class StudentController {
     @Query('dormitory_id') did?: string,
     @Query('dormitory_room_id') drid?: string,
     @Query('tahfidz_teacher_id') ttid?: string,
+    @Query('quran_teacher_id') qtid?: string,
+    @Query('kitab_teacher_id') ktid?: string,
   ) {
-    return this.studentService.findAll(t, p, l, s, st, cid, did, drid, ttid);
+    return this.studentService.findAll(t, p, l, s, st, cid, did, drid, ttid, qtid, ktid);
   }
 
   @Get(':id')

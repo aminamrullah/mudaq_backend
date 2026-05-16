@@ -70,6 +70,11 @@ export class RequestOtpDto {
   @IsOptional()
   @IsEmail()
   email?: string;
+
+  @ApiProperty({ example: 'uuid-pesantren', required: false })
+  @IsOptional()
+  @IsString()
+  tenant_uuid?: string;
 }
 
 export class VerifyOtpDto {

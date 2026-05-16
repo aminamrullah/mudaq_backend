@@ -134,7 +134,7 @@ export class TenantController {
     // Check if landing page management is allowed for this pesantren
     if (!tenant.can_manage_landing_page) {
       // If not allowed, they shouldn't be able to update landing page related fields
-      const lpFields = ['landing_page_template', 'landing_page_config', 'description'];
+      const lpFields = ['landing_page_template', 'landing_page_config'];
       const tryingToUpdateLP = Object.keys(dto).some(key => lpFields.includes(key));
       
       if (tryingToUpdateLP) {

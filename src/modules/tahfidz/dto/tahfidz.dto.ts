@@ -12,8 +12,8 @@ export class CreateTahfidzRecordDto {
   @IsOptional()
   teacher_id?: string;
 
-  @ApiProperty({ enum: ['QURAN', 'NADHOM'] })
-  @IsEnum(['QURAN', 'NADHOM'])
+  @ApiProperty({ enum: ['QURAN', 'KITAB', 'NADHOM'] })
+  @IsEnum(['QURAN', 'KITAB', 'NADHOM'])
   category: string;
 
   @ApiProperty({ description: 'Surah Name or Kitab Name' })

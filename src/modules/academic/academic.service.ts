@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   CreateAcademicYearDto,
@@ -156,17 +156,21 @@ export class AcademicService {
         tenant_uuid: tenantId,
         name: dto.name,
         level: dto.level,
-        academic_year_id: dto.academic_year_id,
-        homeroom_teacher_id: dto.homeroom_teacher_id,
+        academic_year_id: dto.academic_year_id || undefined,
+        homeroom_teacher_id: dto.homeroom_teacher_id || undefined,
         capacity: dto.capacity || 40,
       },
     });
   }
 
   async updateClassroom(tenantId: string, id: string, dto: UpdateClassroomDto) {
+    const data: any = { ...dto };
+    if (data.academic_year_id === '') data.academic_year_id = undefined;
+    if (data.homeroom_teacher_id === '') data.homeroom_teacher_id = null;
+
     return this.prisma.classroom.update({
       where: { id, tenant_uuid: tenantId },
-      data: dto,
+      data,
     });
   }
 
@@ -319,7 +323,18 @@ export class AcademicService {
 
     return this.prisma.schedule.findMany({
       where,
-      include: { subject: true, teacher: true, classroom: true, kitab: true },
+      include: { 
+        subject: true, 
+        teacher: true, 
+        classroom: {
+          include: {
+            _count: {
+              select: { students: true }
+            }
+          }
+        }, 
+        kitab: true 
+      },
     });
   }
 
@@ -330,7 +345,7 @@ export class AcademicService {
         classroom_id: dto.classroom_id,
         subject_id: dto.subject_id,
         teacher_id: dto.teacher_id,
-        kitab_id: dto.kitab_id,
+        kitab_id: dto.kitab_id || null,
         day_of_week: dto.day_of_week,
         start_time: dto.start_time,
         end_time: dto.end_time,
@@ -390,7 +405,7 @@ export class AcademicService {
 
     return this.prisma.questionBank.findMany({
       where,
-      include: { subject: true, teacher: true, questions: true },
+      include: { subject: true, teacher: true, kitab: true, questions: true },
       orderBy: { created_at: 'desc' },
     });
   }
@@ -401,6 +416,7 @@ export class AcademicService {
         tenant_uuid: tenantId,
         subject_id: dto.subject_id,
         teacher_id: dto.teacher_id,
+        kitab_id: dto.kitab_id,
         title: dto.title,
         description: dto.description,
       },
@@ -497,16 +513,29 @@ export class AcademicService {
     });
   }
 
-  async getQuestionsBySubject(tenantId: string, subjectId: string) {
+  async getQuestionsBySubject(tenantId: string, subjectId: string, kitabId?: string) {
+    const where: any = {
+      tenant_uuid: tenantId,
+      subject_id: subjectId
+    };
+
+    if (kitabId && kitabId !== 'undefined' && kitabId !== 'null') {
+      where.OR = [
+        { kitab_id: kitabId },
+        { kitab_id: null }
+      ];
+    }
+
     return this.prisma.question.findMany({
       where: {
-        question_bank: {
-          tenant_uuid: tenantId,
-          subject_id: subjectId
-        }
+        question_bank: where
       },
       include: {
-        question_bank: { select: { title: true } }
+        question_bank: { 
+          include: { 
+            kitab: { select: { id: true, name: true } } 
+          } 
+        }
       }
     });
   }
@@ -514,7 +543,7 @@ export class AcademicService {
   // ==========================================
   // Exam Schedules
   // ==========================================
-  async getExamSchedules(tenantId: string, role?: string, userId?: string, examId?: string) {
+  async getExamSchedules(tenantId: string, role?: string, userId?: string, examId?: string, classroomId?: string) {
     const where: any = { tenant_uuid: tenantId };
     if (examId) where.exam_id = examId;
 
@@ -531,6 +560,18 @@ export class AcademicService {
       ];
     }
 
+    if (classroomId && classroomId !== 'undefined') {
+      if (where.OR) {
+        where.AND = [
+          { classroom_id: classroomId },
+          { OR: where.OR }
+        ];
+        delete where.OR;
+      } else {
+        where.classroom_id = classroomId;
+      }
+    }
+
     return this.prisma.examSchedule.findMany({
       where,
       include: {
@@ -539,6 +580,7 @@ export class AcademicService {
         classroom: true,
         teacher: true,
         supervisor: true,
+        kitab: true,
         question_bank: true,
         questions: {
           include: {
@@ -565,8 +607,9 @@ export class AcademicService {
         date: new Date(dto.date),
         start_time: dto.start_time,
         end_time: dto.end_time,
-        teacher_id: dto.teacher_id,
-        supervisor_id: dto.supervisor_id,
+        teacher_id: dto.teacher_id || null,
+        supervisor_id: dto.supervisor_id || null,
+        kitab_id: dto.kitab_id || null,
         status: 'pending'
       }
     });
@@ -602,6 +645,15 @@ export class AcademicService {
   async deleteExamSchedule(tenantId: string, id: string) {
     return this.prisma.examSchedule.delete({
       where: { id, tenant_uuid: tenantId }
+    });
+  }
+
+  async getExamResults(tenantId: string, scheduleId: string) {
+    return this.prisma.examResult.findMany({
+      where: { tenant_uuid: tenantId, exam_schedule_id: scheduleId },
+      include: { 
+        student: { select: { id: true, name: true, nis: true } } 
+      }
     });
   }
 
@@ -677,11 +729,17 @@ export class AcademicService {
   async getReportCards(tenantId: string, query: GenerateReportCardDto) {
     const where: any = {
       tenant_uuid: tenantId,
-      classroom_id: query.classroom_id,
     };
-    if (query.academic_year_id) where.academic_year_id = query.academic_year_id;
-    if (query.period_id) where.period_id = query.period_id;
-    if (query.student_id) where.student_id = query.student_id;
+
+    if (query.id) {
+      where.id = query.id;
+    } else {
+      if (!query.classroom_id) throw new BadRequestException('classroom_id is required if id is not provided');
+      where.classroom_id = query.classroom_id;
+      if (query.academic_year_id) where.academic_year_id = query.academic_year_id;
+      if (query.period_id) where.period_id = query.period_id;
+      if (query.student_id) where.student_id = query.student_id;
+    }
 
     return this.prisma.reportCard.findMany({
       where,
@@ -763,6 +821,9 @@ export class AcademicService {
   }
 
   async generateReportCards(tenantId: string, dto: GenerateReportCardDto) {
+    if (!dto.classroom_id) throw new BadRequestException('classroom_id is required for generating report cards');
+    const classroomId = dto.classroom_id;
+
     if (!dto.academic_year_id) {
       const activeYear = await this.prisma.academicYear.findFirst({
         where: { tenant_uuid: tenantId, is_active: true }
@@ -854,7 +915,7 @@ export class AcademicService {
         report = await this.prisma.reportCard.update({
           where: { id: report.id },
           data: { 
-            classroom_id: dto.classroom_id,
+            classroom_id: classroomId,
             attendance_sick: attSick,
             attendance_izin: attIzin,
             attendance_alpa: attAlpa
@@ -867,7 +928,7 @@ export class AcademicService {
             student_id: student.id,
             academic_year_id: academicYearId,
             period_id: dto.period_id || null,
-            classroom_id: dto.classroom_id,
+            classroom_id: classroomId,
             status: 'draft',
             attendance_sick: attSick,
             attendance_izin: attIzin,
@@ -980,6 +1041,7 @@ export class AcademicService {
           attendance_sick: updateData.attendance_sick,
           attendance_izin: updateData.attendance_izin,
           attendance_alpa: updateData.attendance_alpa,
+          promotion_status: updateData.promotion_status,
         }
       });
 
@@ -1014,14 +1076,14 @@ export class AcademicService {
   // ==========================================
   async getStudentsInClass(tenantId: string, classroomId: string) {
     return this.prisma.student.findMany({
-      where: { tenant_uuid: tenantId, classroom_id: classroomId, status: 'AKTIF', deleted_at: null },
+      where: { tenant_uuid: tenantId, classroom_id: classroomId, deleted_at: null },
       orderBy: { name: 'asc' },
     });
   }
 
   async getUnassignedStudents(tenantId: string) {
     return this.prisma.student.findMany({
-      where: { tenant_uuid: tenantId, classroom_id: null, status: 'AKTIF', deleted_at: null },
+      where: { tenant_uuid: tenantId, classroom_id: null, deleted_at: null },
       orderBy: { name: 'asc' },
     });
   }
@@ -1042,7 +1104,7 @@ export class AcademicService {
   // ==========================================
   // Daily Assignments
   // ==========================================
-  async getAssignments(tenantId: string, role: string, userId: string) {
+  async getAssignments(tenantId: string, role: string, userId: string, classroomId?: string) {
     const where: any = { tenant_uuid: tenantId };
     
     if (role === 'USTAD') {
@@ -1051,6 +1113,10 @@ export class AcademicService {
       });
       if (!teacher) return [];
       where.teacher_id = teacher.id;
+    }
+
+    if (classroomId && classroomId !== 'undefined') {
+      where.classroom_id = classroomId;
     }
 
     return this.prisma.dailyAssignment.findMany({

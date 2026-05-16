@@ -40,6 +40,17 @@ export class WalisantriController {
     return this.svc.getMyStudents(t, phone);
   }
 
+  @Post('claim-student')
+  @Roles(Role.WALI_SANTRI)
+  @ApiOperation({ summary: 'Claim/Link a student using NIK/NIS' })
+  claimStudent(
+    @CurrentUser('id') userId: string,
+    @CurrentUser('phone') phone: string,
+    @Body() dto: { nik: string; birth_date: string; mother_name: string },
+  ) {
+    return this.svc.claimStudent(userId, phone, dto);
+  }
+
   @Get('profile')
   @Roles(Role.WALI_SANTRI)
   @ApiOperation({ summary: 'Get wali profile with pesantren info' })

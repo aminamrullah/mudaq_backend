@@ -212,6 +212,7 @@ export class KoperasiService implements OnModuleInit {
   //  OUTLETS
   // ═══════════════════════════════════════════════════════════
   async getOutlets(tenantUuid: string) {
+    if (!tenantUuid) return [];
     return this.prisma.koperasiOutlet.findMany({
       where: { tenant_uuid: tenantUuid },
       include: {
@@ -242,6 +243,7 @@ export class KoperasiService implements OnModuleInit {
   //  CATEGORIES
   // ═══════════════════════════════════════════════════════════
   async getCategories(tenantUuid: string, outletId?: string) {
+    if (!tenantUuid) return [];
     const where: any = { tenant_uuid: tenantUuid };
     if (outletId) {
       where.OR = [

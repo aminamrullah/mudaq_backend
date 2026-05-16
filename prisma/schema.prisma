@@ -377,6 +377,8 @@ model Kitab {
 
   pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
   schedules Schedule[]
+  question_banks QuestionBank[]
+  exam_schedules ExamSchedule[]
 
   @@unique([tenant_uuid, name])
   @@index([tenant_uuid])
@@ -431,6 +433,8 @@ model Student {
   dormitory_id        String?  @db.Uuid
   dormitory_room_id   String?  @db.Uuid
   tahfidz_teacher_id  String?  @db.Uuid
+  quran_teacher_id    String?  @db.Uuid
+  kitab_teacher_id    String?  @db.Uuid
   ppdb_wave_id        String?  @db.Uuid
   
   status           String   @default("CALON") // CALON, AKTIF, ALUMNI, BOYONG, KELUAR
@@ -449,6 +453,8 @@ model Student {
   dormitory       Dormitory?     @relation(fields: [dormitory_id], references: [id])
   dormitory_room  DormitoryRoom? @relation(fields: [dormitory_room_id], references: [id])
   tahfidz_teacher Teacher?       @relation("TahfidzStudents", fields: [tahfidz_teacher_id], references: [id])
+  quran_teacher   Teacher?       @relation("QuranStudents", fields: [quran_teacher_id], references: [id])
+  kitab_teacher   Teacher?       @relation("KitabStudents", fields: [kitab_teacher_id], references: [id])
   ppdb_wave       PpdbWave?      @relation(fields: [ppdb_wave_id], references: [id])
   
   wallet           Wallet?
@@ -489,6 +495,8 @@ model Teacher {
   stay_type   String?  // mukim, non-mukim
   photo       String?
   is_tahfidz_teacher Boolean @default(false)
+  can_manage_quran   Boolean @default(false)
+  can_manage_kitab   Boolean @default(false)
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
   deleted_at  DateTime?
@@ -498,6 +506,8 @@ model Teacher {
   classrooms      Classroom[]
   schedules       Schedule[]
   tahfidz_students Student[]    @relation("TahfidzStudents")
+  quran_students   Student[]    @relation("QuranStudents")
+  kitab_students   Student[]    @relation("KitabStudents")
   payroll_items    PayrollItem[]
   question_banks   QuestionBank[]
   exam_paper_schedules   ExamSchedule[] @relation("ExamPaperTeacher")
@@ -932,6 +942,7 @@ model QuestionBank {
   tenant_uuid String   @db.Uuid
   subject_id  String   @db.Uuid
   teacher_id  String   @db.Uuid
+  kitab_id    String?  @db.Uuid
   title       String
   description String?
   created_at  DateTime @default(now())
@@ -940,6 +951,7 @@ model QuestionBank {
   pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
   subject   Subject   @relation(fields: [subject_id], references: [id])
   teacher   Teacher   @relation(fields: [teacher_id], references: [id])
+  kitab     Kitab?    @relation(fields: [kitab_id], references: [id])
   questions Question[]
   exam_schedules ExamSchedule[]
 
@@ -998,6 +1010,7 @@ model ExamSchedule {
   end_time         String
   teacher_id       String?  @db.Uuid // Teacher responsible for the exam paper
   supervisor_id    String?  @db.Uuid // Teacher guarding the room
+  kitab_id         String?  @db.Uuid
   status           String   @default("pending") // pending, submitted, approved
   created_at       DateTime @default(now())
   updated_at       DateTime @updatedAt
@@ -1009,6 +1022,7 @@ model ExamSchedule {
   classroom     Classroom     @relation(fields: [classroom_id], references: [id])
   teacher       Teacher?      @relation("ExamPaperTeacher", fields: [teacher_id], references: [id])
   supervisor    Teacher?      @relation("ExamSupervisor", fields: [supervisor_id], references: [id])
+  kitab         Kitab?        @relation(fields: [kitab_id], references: [id])
   results       ExamResult[]
   questions     ExamQuestion[]
 
@@ -1064,6 +1078,7 @@ model ReportCard {
   attendance_sick  Int      @default(0)
   attendance_izin  Int      @default(0)
   attendance_alpa  Int      @default(0)
+  promotion_status String?  // Naik Kelas, Tinggal Kelas, etc
   status           String   @default("draft") // draft, published
   created_at       DateTime @default(now())
   updated_at       DateTime @updatedAt
@@ -1147,6 +1162,7 @@ model TeachingJournal {
   schedule_id  String   @db.Uuid
   date         DateTime @db.Date
   material     String   
+  topic        String?
   student_count Int     @default(0) 
   notes        String?
   created_at   DateTime @default(now())

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateTeachingJournalDto, UpdateTeachingJournalDto } from './dto/teaching-journal.dto';
 
@@ -17,13 +17,18 @@ export class TeachingJournalService {
       teacherId = teacher.id; // Force use their own ID
     }
 
+    if (!teacherId) {
+      throw new BadRequestException('teacher_id is required');
+    }
+
     return this.prisma.teachingJournal.create({
       data: {
         tenant_uuid,
-        teacher_id: teacherId,
+        teacher_id: teacherId!,
         schedule_id: dto.schedule_id,
         date: new Date(dto.date),
         material: dto.material,
+        topic: dto.topic,
         student_count: dto.student_count || 0,
         notes: dto.notes,
       },
@@ -51,13 +56,14 @@ export class TeachingJournalService {
       where: { id },
       data: {
         material: dto.material ?? journal.material,
+        topic: dto.topic ?? journal.topic,
         student_count: dto.student_count ?? journal.student_count,
         notes: dto.notes ?? journal.notes,
       },
     });
   }
 
-  async findByTeacher(tenant_uuid: string, role: string, userId: string, teacher_id: string, month?: string) {
+  async findByTeacher(tenant_uuid: string, role: string, userId: string, teacher_id: string, month?: string, classroom_id?: string) {
     let tid = teacher_id;
 
     if (role === 'USTAD') {
@@ -73,6 +79,9 @@ export class TeachingJournalService {
       const start = new Date(`${month}-01`);
       const end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
       where.date = { gte: start, lte: end };
+    }
+    if (classroom_id && classroom_id !== 'undefined') {
+      where.schedule = { classroom_id };
     }
 
     return this.prisma.teachingJournal.findMany({

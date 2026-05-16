@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { normalizePhone } from '../../common/utils/phone.util';
@@ -80,6 +81,62 @@ export class WalisantriService {
         };
       }),
     );
+  }
+
+  // ── Claim Student (Link Account) ──
+  async claimStudent(userId: string, phone: string, dto: { nik: string; birth_date: string; mother_name: string }) {
+    const normalizedPhone = normalizePhone(phone);
+    
+    if (!dto.nik || !dto.birth_date || !dto.mother_name) {
+      throw new BadRequestException('NIK, Tanggal Lahir, dan Nama Ibu harus diisi');
+    }
+    
+    const student = await this.prisma.student.findFirst({
+      where: {
+        nik: dto.nik,
+        deleted_at: null,
+      },
+    });
+    
+    if (!student) {
+      throw new NotFoundException('Santri dengan NIK tersebut tidak ditemukan');
+    }
+    
+    // Verify birth date if provided in student record
+    if (student.birth_date) {
+      const inputDate = new Date(dto.birth_date).toDateString();
+      const studentDate = new Date(student.birth_date).toDateString();
+      if (inputDate !== studentDate) {
+        throw new ForbiddenException('Tanggal lahir tidak cocok');
+      }
+    }
+    
+    // Verify mother name if provided in student record
+    if (student.mother_name) {
+      if (student.mother_name.toLowerCase().trim() !== dto.mother_name.toLowerCase().trim()) {
+        throw new ForbiddenException('Nama Ibu Kandung tidak cocok');
+      }
+    }
+    
+    // Link the student
+    await this.prisma.$transaction(async (tx) => {
+      // Update student's parent_phone to match this user
+      await tx.student.update({
+        where: { id: student.id },
+        data: { parent_phone: normalizedPhone },
+      });
+      
+      // Also update user's tenant_uuid if it's null
+      const user = await tx.user.findUnique({ where: { id: userId } });
+      if (user && !user.tenant_uuid) {
+        await tx.user.update({
+          where: { id: userId },
+          data: { tenant_uuid: student.tenant_uuid },
+        });
+      }
+    });
+    
+    return { message: 'Santri berhasil dihubungkan', student_id: student.id };
   }
 
   async getProfile(userId: string) {

@@ -8,11 +8,12 @@ export class AttendanceService {
   constructor(private prisma: PrismaService) {}
 
   async create(tenantUuid: string, dto: CreateAttendanceDto) {
+    const scheduleId = dto.schedule_id || null;
     return this.prisma.attendance.upsert({
       where: {
         student_id_schedule_id_date: {
           student_id: dto.student_id,
-          schedule_id: dto.schedule_id || '',
+          schedule_id: scheduleId as any,
           date: new Date(dto.date),
         },
       },
@@ -20,7 +21,7 @@ export class AttendanceService {
       create: {
         tenant_uuid: tenantUuid,
         student_id: dto.student_id,
-        schedule_id: dto.schedule_id,
+        schedule_id: scheduleId,
         date: new Date(dto.date),
         status: dto.status,
         notes: dto.notes,
@@ -29,6 +30,7 @@ export class AttendanceService {
   }
 
   async bulkCreate(tenantUuid: string, dto: BulkAttendanceDto) {
+    const scheduleId = dto.schedule_id || null;
     const results = await this.prisma.$transaction(async (tx) => {
       // 1. Mark student attendance
       const studentAtt = await Promise.all(
@@ -37,7 +39,7 @@ export class AttendanceService {
             where: {
               student_id_schedule_id_date: {
                 student_id: item.student_id,
-                schedule_id: dto.schedule_id || '',
+                schedule_id: scheduleId as any,
                 date: new Date(dto.date),
               },
             },
@@ -45,7 +47,7 @@ export class AttendanceService {
             create: {
               tenant_uuid: tenantUuid,
               student_id: item.student_id,
-              schedule_id: dto.schedule_id,
+              schedule_id: scheduleId,
               date: new Date(dto.date),
               status: item.status,
               notes: item.notes,

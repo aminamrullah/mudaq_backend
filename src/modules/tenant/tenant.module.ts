@@ -9,6 +9,6 @@ import { XenditService } from './xendit.service';
 @Module({
   controllers: [TenantController, WebhookController, PublicController],
   providers: [TenantService, XenditService],
-  exports: [TenantService],
+  exports: [TenantService, XenditService],
 })
 export class TenantModule {}

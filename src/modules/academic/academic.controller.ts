@@ -399,9 +399,15 @@ export class AcademicController {
   }
 
   @Get('questions-by-subject')
-  @ApiOperation({ summary: 'Get all questions for a subject' })
-  getQuestionsBySubject(@CurrentUser('tenant_uuid') t: string, @Query('subject_id') subjectId: string) {
-    return this.academicService.getQuestionsBySubject(t, subjectId);
+  @ApiOperation({ summary: 'Get all questions for a subject (optional filter by kitab)' })
+  @ApiQuery({ name: 'subject_id', required: true })
+  @ApiQuery({ name: 'kitab_id', required: false })
+  getQuestionsBySubject(
+    @CurrentUser('tenant_uuid') t: string, 
+    @Query('subject_id') subjectId: string,
+    @Query('kitab_id') kitabId?: string
+  ) {
+    return this.academicService.getQuestionsBySubject(t, subjectId, kitabId);
   }
 
   // ==========================================
@@ -410,13 +416,15 @@ export class AcademicController {
   @Get('exam-schedules')
   @ApiOperation({ summary: 'Get exam schedules' })
   @ApiQuery({ name: 'exam_id', required: false })
+  @ApiQuery({ name: 'classroom_id', required: false })
   getExamSchedules(
     @CurrentUser('tenant_uuid') t: string,
     @CurrentUser('role') role: string,
     @CurrentUser('id') userId: string,
     @Query('exam_id') examId?: string,
+    @Query('classroom_id') classroomId?: string,
   ) {
-    return this.academicService.getExamSchedules(t, role, userId, examId);
+    return this.academicService.getExamSchedules(t, role, userId, examId, classroomId);
   }
 
   @Post('exam-schedules')
@@ -442,6 +450,13 @@ export class AcademicController {
   @ApiOperation({ summary: 'Delete exam schedule' })
   deleteExamSchedule(@CurrentUser('tenant_uuid') t: string, @Param('id') id: string) {
     return this.academicService.deleteExamSchedule(t, id);
+  }
+
+  @Get('exam-schedules/:id/results')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.USTAD)
+  @ApiOperation({ summary: 'Get exam student results' })
+  getExamResults(@CurrentUser('tenant_uuid') t: string, @Param('id') id: string) {
+    return this.academicService.getExamResults(t, id);
   }
 
   @Post('exam-schedules/:id/results')
@@ -534,12 +549,14 @@ export class AcademicController {
   // ==========================================
   @Get('assignments')
   @ApiOperation({ summary: 'Get daily assignments' })
+  @ApiQuery({ name: 'classroom_id', required: false })
   getAssignments(
     @CurrentUser('tenant_uuid') t: string,
     @CurrentUser('role') role: string,
     @CurrentUser('id') userId: string,
+    @Query('classroom_id') classroomId?: string,
   ) {
-    return this.academicService.getAssignments(t, role, userId);
+    return this.academicService.getAssignments(t, role, userId, classroomId);
   }
 
   @Post('assignments')
