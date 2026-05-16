@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
-import { extname, join } from 'path';
+import { extname, join, resolve } from 'path';
 import * as fs from 'fs';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiConsumes, ApiBody, ApiBearerAuth } from '@nestjs/swagger';
@@ -27,8 +27,18 @@ export class UploadController {
     FileInterceptor('file', {
       storage: diskStorage({
         destination: (req: any, file, cb) => {
-          const folder = req.query.folder || '';
-          const uploadPath = join(process.cwd(), 'public', 'uploads', folder);
+          // Sanitize folder name to prevent path traversal attacks
+          const rawFolder = (req.query.folder || '').toString();
+          const folder = rawFolder.replace(/\.\.+/g, '').replace(/[^a-zA-Z0-9_\-\/]/g, '').replace(/^\/+/, '');
+          
+          const uploadsRoot = resolve(join(process.cwd(), 'public', 'uploads'));
+          const uploadPath = resolve(join(uploadsRoot, folder));
+          
+          // Verify resolved path stays within uploads directory
+          if (!uploadPath.startsWith(uploadsRoot)) {
+            cb(new BadRequestException('Invalid upload path'), null as any);
+            return;
+          }
           
           if (!fs.existsSync(uploadPath)) {
             fs.mkdirSync(uploadPath, { recursive: true });

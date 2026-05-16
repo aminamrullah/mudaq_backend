@@ -11,10 +11,22 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   // Security
+  const isProduction = process.env.NODE_ENV === 'production';
   app.use(
     helmet({
       crossOriginResourcePolicy: { policy: 'cross-origin' },
-      contentSecurityPolicy: false,
+      contentSecurityPolicy: isProduction ? {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          imgSrc: ["'self'", 'data:', 'https:'],
+          connectSrc: ["'self'", ...(process.env.ALLOWED_ORIGINS?.split(',').map(o => o.trim()) || [])],
+          fontSrc: ["'self'"],
+          objectSrc: ["'none'"],
+          frameSrc: ["'none'"],
+        },
+      } : false,
     }),
   );
   app.enableCors({
@@ -44,24 +56,26 @@ async function bootstrap() {
     new TransformInterceptor(),
   );
 
-  // Swagger
-  const config = new DocumentBuilder()
-    .setTitle('MUDAQ API')
-    .setDescription('Multi-tenant Digital Management System for Pesantren')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .addTag('auth', 'Authentication')
-    .addTag('tenants', 'Tenant (Pesantren) Management')
-    .addTag('users', 'User Management')
-    .addTag('students', 'Santri Management')
-    .addTag('teachers', 'Guru Management')
-    .addTag('attendance', 'Attendance Management')
-    .addTag('billing', 'Payment & Billing')
-    .addTag('wallet', 'E-Wallet Santri')
-    .addTag('payroll', 'Payroll Management')
-    .build();
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('docs', app, document);
+  // Swagger (disabled in production to prevent API schema exposure)
+  if (!isProduction) {
+    const config = new DocumentBuilder()
+      .setTitle('MUDAQ API')
+      .setDescription('Multi-tenant Digital Management System for Pesantren')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .addTag('auth', 'Authentication')
+      .addTag('tenants', 'Tenant (Pesantren) Management')
+      .addTag('users', 'User Management')
+      .addTag('students', 'Santri Management')
+      .addTag('teachers', 'Guru Management')
+      .addTag('attendance', 'Attendance Management')
+      .addTag('billing', 'Payment & Billing')
+      .addTag('wallet', 'E-Wallet Santri')
+      .addTag('payroll', 'Payroll Management')
+      .build();
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('docs', app, document);
+  }
 
   const port = process.env.PORT || 4000;
   await app.listen(port, '0.0.0.0');

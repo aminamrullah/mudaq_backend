@@ -145,7 +145,7 @@ export class BillingService {
     // 2. Wallet (Saldo Santri) Logic
     return await this.prisma.$transaction(async (tx) => {
       if (dto.payment_method === 'saldo_santri') {
-        const wallet = await tx.wallet.findUnique({ where: { student_id: firstBill.student_id } });
+        const wallet = await tx.wallet.findFirst({ where: { student_id: firstBill.student_id, tenant_uuid: tenantUuid } });
         if (!wallet || Number(wallet.balance) < totalAmount) {
           throw new BadRequestException('Saldo santri tidak mencukupi');
         }
@@ -547,8 +547,8 @@ export class BillingService {
       // Handle saldo_santri payment
       if (dto.payment_method === 'saldo_santri') {
         this.logger.log(`[PAYMENT] Processing balance payment for student: ${bill.student_id}, amount: ${dto.amount}`);
-        const wallet = await tx.wallet.findUnique({
-          where: { student_id: bill.student_id },
+        const wallet = await tx.wallet.findFirst({
+          where: { student_id: bill.student_id, tenant_uuid: tenantUuid },
         });
 
         if (!wallet) {

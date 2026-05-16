@@ -348,8 +348,8 @@ export class WalletService {
     return { message: 'PIN berhasil diubah' };
   }
 
-  async verifyPin(walletId: string, pin: string) {
-    const wallet = await this.prisma.wallet.findUnique({ where: { id: walletId } });
+  async verifyPin(tenantUuid: string, walletId: string, pin: string) {
+    const wallet = await this.prisma.wallet.findFirst({ where: { id: walletId, tenant_uuid: tenantUuid } });
     if (!wallet) throw new NotFoundException('Dompet tidak ditemukan');
     if (!wallet.pin) throw new BadRequestException('PIN belum diatur');
     
@@ -365,7 +365,7 @@ export class WalletService {
     if (!wallet) throw new NotFoundException('Dompet tidak ditemukan');
     
     // Security check: verify student PIN
-    await this.verifyPin(wallet.id, dto.pin);
+    await this.verifyPin(tenantUuid, wallet.id, dto.pin);
     
     if (Number(wallet.balance) < dto.amount) throw new BadRequestException('Saldo tidak mencukupi');
 
@@ -453,7 +453,7 @@ export class WalletService {
     if (Number(from.balance) < dto.amount)
       throw new BadRequestException('Saldo tidak mencukupi');
 
-    await this.verifyPin(dto.from_wallet_id, dto.pin);
+    await this.verifyPin(tenantUuid, dto.from_wallet_id, dto.pin);
 
     const ref = `TRF-${Date.now()}`;
     const fromBefore = Number(from.balance);

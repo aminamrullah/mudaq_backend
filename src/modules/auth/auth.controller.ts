@@ -11,8 +11,9 @@ import {
 import * as express from 'express';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
-import { LoginDto, RegisterDto, RefreshTokenDto, RequestOtpDto, VerifyOtpDto } from './dto/auth.dto';
+import { LoginDto, RegisterDto, RefreshTokenDto, RequestOtpDto, VerifyOtpDto, ResetPasswordDto } from './dto/auth.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('auth')
@@ -43,6 +44,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Login user' })
   async login(@Body() dto: LoginDto, @Request() req: any, @Res({ passthrough: true }) res: express.Response) {
@@ -54,6 +56,7 @@ export class AuthController {
   }
 
   @Post('request-otp')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Request OTP via WhatsApp' })
   async requestOtp(@Body() dto: RequestOtpDto) {
@@ -73,7 +76,9 @@ export class AuthController {
 
 
   @Post('register')
-  @ApiOperation({ summary: 'Register new user' })
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Register new user (Admin only)' })
   async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: express.Response) {
     const result = await this.authService.register(dto);
     this.setAuthCookies(res, result.access_token, result.refresh_token);
@@ -98,6 +103,7 @@ export class AuthController {
   }
 
   @Post('request-password-reset')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Request password reset OTP' })
   async requestPasswordReset(@Body() dto: RequestOtpDto) {
@@ -105,9 +111,10 @@ export class AuthController {
   }
 
   @Post('reset-password')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Reset password using OTP' })
-  async resetPassword(@Body() dto: any) {
+  async resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto);
   }
 

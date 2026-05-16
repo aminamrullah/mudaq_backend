@@ -7,9 +7,11 @@ import {
 import { Reflector } from '@nestjs/core';
 import { Role } from '@prisma/client';
 import { ROLES_KEY } from '../decorators/roles.decorator';
+import { Logger } from '@nestjs/common';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
+  private readonly logger = new Logger(RolesGuard.name);
   constructor(private reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
@@ -24,7 +26,7 @@ export class RolesGuard implements CanActivate {
 
     const { user } = context.switchToHttp().getRequest();
     if (!user) {
-      console.log('[RolesGuard] No user found in request');
+      this.logger.warn('No user found in request');
       throw new ForbiddenException('Akses ditolak');
     }
 
@@ -32,7 +34,7 @@ export class RolesGuard implements CanActivate {
     if (user.role === Role.SUPER_ADMIN) return true;
 
     if (!requiredRoles.includes(user.role)) {
-      console.log(`[RolesGuard] Forbidden: User role "${user.role}" not in required roles [${requiredRoles.join(', ')}] for path: ${context.switchToHttp().getRequest().url}`);
+      this.logger.warn(`Forbidden: User role "${user.role}" not in required roles [${requiredRoles.join(', ')}] for path: ${context.switchToHttp().getRequest().url}`);
       throw new ForbiddenException('Anda tidak memiliki akses ke resource ini');
     }
 
