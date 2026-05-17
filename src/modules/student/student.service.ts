@@ -72,6 +72,20 @@ export class StudentService {
           }
         });
 
+        const statusToUse = sanitizedData.status || 'CALON';
+        if (statusToUse === 'CALON') {
+          if (
+            sanitizedData.classroom_id ||
+            sanitizedData.dormitory_id ||
+            sanitizedData.dormitory_room_id ||
+            sanitizedData.tahfidz_teacher_id ||
+            sanitizedData.quran_teacher_id ||
+            sanitizedData.kitab_teacher_id
+          ) {
+            throw new BadRequestException('Santri dengan status CALON belum bisa dimasukkan ke kelas, asrama, atau wali kelas/guru.');
+          }
+        }
+
         const student = await tx.student.create({
           data: {
             ...sanitizedData,
@@ -234,8 +248,14 @@ export class StudentService {
         // Track changes for history
         if (data.status && data.status !== current.status) {
           await this.recordHistory(tx, tenantUuid, id, 'STATUS', current.status, data.status);
-          if (data.status === 'ALUMNI' || data.status === 'BOYONG') {
+          if (data.status === 'ALUMNI' || data.status === 'BOYONG' || data.status === 'KELUAR') {
             data.graduation_date = new Date().toISOString();
+            data.classroom_id = null;
+            data.dormitory_id = null;
+            data.dormitory_room_id = null;
+            data.tahfidz_teacher_id = null;
+            data.quran_teacher_id = null;
+            data.kitab_teacher_id = null;
           }
           // Auto NIS for new students being accepted
           if (data.status === 'AKTIF' && current.status === 'CALON') {
@@ -351,6 +371,21 @@ export class StudentService {
             sanitizedData[field] = null;
           }
         });
+
+        const statusToUse = sanitizedData.status || current.status;
+        if (statusToUse === 'CALON') {
+          const hasAssignment =
+            (sanitizedData.classroom_id !== undefined && sanitizedData.classroom_id !== null) ||
+            (sanitizedData.dormitory_id !== undefined && sanitizedData.dormitory_id !== null) ||
+            (sanitizedData.dormitory_room_id !== undefined && sanitizedData.dormitory_room_id !== null) ||
+            (sanitizedData.tahfidz_teacher_id !== undefined && sanitizedData.tahfidz_teacher_id !== null) ||
+            (sanitizedData.quran_teacher_id !== undefined && sanitizedData.quran_teacher_id !== null) ||
+            (sanitizedData.kitab_teacher_id !== undefined && sanitizedData.kitab_teacher_id !== null);
+
+          if (hasAssignment) {
+            throw new BadRequestException('Santri dengan status CALON belum bisa dimasukkan ke kelas, asrama, atau wali kelas/guru.');
+          }
+        }
 
         return await tx.student.update({
           where: { id },
@@ -505,6 +540,12 @@ export class StudentService {
           nik: student.nik ? `${student.nik}_del_${timestamp}` : null,
           parent_phone: student.parent_phone ? `${student.parent_phone}_del_${timestamp}` : null,
         },
+      });
+
+      // Also set wallet as inactive
+      await tx.wallet.updateMany({
+        where: { student_id: id },
+        data: { is_active: false },
       });
 
       // Handle Walisantri account cleanup

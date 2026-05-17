@@ -800,6 +800,16 @@ export class KoperasiService implements OnModuleInit {
       throw new BadRequestException('Pilih santri terlebih dahulu untuk transaksi ini');
     }
 
+    if (dto.student_id) {
+      const student = await this.prisma.student.findFirst({
+        where: { id: dto.student_id, tenant_uuid: tenantUuid, deleted_at: null },
+      });
+      if (!student) throw new NotFoundException('Santri tidak ditemukan');
+      if (student.status !== 'AKTIF' && student.status !== 'active') {
+        throw new BadRequestException('Transaksi dibatalkan: Hanya santri dengan status AKTIF yang dapat bertransaksi.');
+      }
+    }
+
     try {
       // 1. Process Items (If Sale)
       if (orderType === 'sale') {
@@ -970,7 +980,11 @@ export class KoperasiService implements OnModuleInit {
       if (!dto.student_id) throw new BadRequestException(`Pilih santri untuk pembayaran ${dto.payment_method === 'debt' ? 'hutang' : 'wallet'}`);
 
       const wallet = await this.prisma.wallet.findFirst({
-        where: { student_id: dto.student_id, tenant_uuid: tenantUuid },
+        where: {
+          student_id: dto.student_id,
+          tenant_uuid: tenantUuid,
+          student: { deleted_at: null }
+        },
       });
       if (!wallet) throw new BadRequestException('Santri belum memiliki wallet');
       
@@ -1450,6 +1464,14 @@ export class KoperasiService implements OnModuleInit {
     if (!dto.items?.length) throw new BadRequestException('Keranjang kosong');
     if (!dto.student_id) throw new BadRequestException('Santri harus dipilih');
 
+    const student = await this.prisma.student.findFirst({
+      where: { id: dto.student_id, tenant_uuid: tenantUuid, deleted_at: null },
+    });
+    if (!student) throw new NotFoundException('Santri tidak ditemukan');
+    if (student.status !== 'AKTIF' && student.status !== 'active') {
+      throw new BadRequestException('Transaksi dibatalkan: Hanya santri dengan status AKTIF yang dapat bertransaksi.');
+    }
+
     // For mobile orders, we find the product and calculate totals
     const productIds = dto.items.map(i => i.product_id);
     const products = await this.prisma.product.findMany({
@@ -1493,7 +1515,11 @@ export class KoperasiService implements OnModuleInit {
     
     // Check wallet balance
     const wallet = await this.prisma.wallet.findFirst({
-      where: { student_id: dto.student_id, tenant_uuid: tenantUuid }
+      where: {
+        student_id: dto.student_id,
+        tenant_uuid: tenantUuid,
+        student: { deleted_at: null }
+      }
     });
     if (!wallet) throw new BadRequestException('Santri belum memiliki wallet');
     if (Number(wallet.balance) < total) {

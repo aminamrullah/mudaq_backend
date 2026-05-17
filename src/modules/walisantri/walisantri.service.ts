@@ -25,7 +25,13 @@ export class WalisantriService {
     }
     const normalizedPhone = normalizePhone(phone);
     const student = await this.prisma.student.findFirst({
-      where: { id: studentId, tenant_uuid: tenantUuid, parent_phone: normalizedPhone, deleted_at: null },
+      where: {
+        id: studentId,
+        tenant_uuid: tenantUuid,
+        parent_phone: normalizedPhone,
+        status: { in: ['AKTIF', 'active'] },
+        deleted_at: null,
+      },
     });
     if (!student) throw new ForbiddenException('Santri tidak ditemukan atau bukan anak Anda');
     return student;
@@ -48,6 +54,7 @@ export class WalisantriService {
       where: { 
         tenant_uuid: tenantUuid, 
         parent_phone: { in: phoneVariants },
+        status: { in: ['AKTIF', 'active'] },
         deleted_at: null 
       },
       include: {
@@ -94,6 +101,7 @@ export class WalisantriService {
     const student = await this.prisma.student.findFirst({
       where: {
         nik: dto.nik,
+        status: { in: ['AKTIF', 'active'] },
         deleted_at: null,
       },
     });

@@ -30,9 +30,12 @@ export class WalletService {
     });
 
     // 2. Get existing wallets
-    const walletWhere: any = { tenant_uuid: tenantUuid };
+    const walletWhere: any = {
+      tenant_uuid: tenantUuid,
+      student: { deleted_at: null }
+    };
     if (parentPhone) {
-      walletWhere.student = { parent_phone: parentPhone };
+      walletWhere.student.parent_phone = parentPhone;
     }
 
     const wallets = await this.prisma.wallet.findMany({
@@ -59,7 +62,10 @@ export class WalletService {
       });
       // Re-fetch wallets after creation
       return this.prisma.wallet.findMany({
-        where: { tenant_uuid: tenantUuid },
+        where: {
+          tenant_uuid: tenantUuid,
+          student: { deleted_at: null }
+        },
         include: {
           student: {
             select: { id: true, name: true, nis: true, parent_phone: true },
@@ -79,7 +85,11 @@ export class WalletService {
     limit = 20,
   ) {
     const wallet = await this.prisma.wallet.findFirst({
-      where: { id: walletId, tenant_uuid: tenantUuid },
+      where: {
+        id: walletId,
+        tenant_uuid: tenantUuid,
+        student: { deleted_at: null }
+      },
     });
     if (!wallet) throw new NotFoundException('Dompet tidak ditemukan');
 
@@ -105,7 +115,11 @@ export class WalletService {
     });
 
     const wallet = await this.prisma.wallet.findFirst({
-      where: { id: dto.wallet_id, tenant_uuid: tenantUuid },
+      where: {
+        id: dto.wallet_id,
+        tenant_uuid: tenantUuid,
+        student: { deleted_at: null }
+      },
     });
     if (!wallet) throw new NotFoundException('Dompet tidak ditemukan');
 
@@ -178,7 +192,11 @@ export class WalletService {
 
   async createTopup(tenantUuid: string, dto: TopupDto) {
     const wallet = await this.prisma.wallet.findFirst({
-      where: { id: dto.wallet_id, tenant_uuid: tenantUuid },
+      where: {
+        id: dto.wallet_id,
+        tenant_uuid: tenantUuid,
+        student: { deleted_at: null }
+      },
       include: {
         student: {
           include: {
@@ -329,7 +347,11 @@ export class WalletService {
 
   async updatePin(tenantUuid: string, dto: UpdatePinDto) {
     const wallet = await this.prisma.wallet.findFirst({
-      where: { id: dto.wallet_id, tenant_uuid: tenantUuid },
+      where: {
+        id: dto.wallet_id,
+        tenant_uuid: tenantUuid,
+        student: { deleted_at: null }
+      },
     });
     if (!wallet) throw new NotFoundException('Dompet tidak ditemukan');
 
@@ -349,7 +371,13 @@ export class WalletService {
   }
 
   async verifyPin(tenantUuid: string, walletId: string, pin: string) {
-    const wallet = await this.prisma.wallet.findFirst({ where: { id: walletId, tenant_uuid: tenantUuid } });
+    const wallet = await this.prisma.wallet.findFirst({
+      where: {
+        id: walletId,
+        tenant_uuid: tenantUuid,
+        student: { deleted_at: null }
+      }
+    });
     if (!wallet) throw new NotFoundException('Dompet tidak ditemukan');
     if (!wallet.pin) throw new BadRequestException('PIN belum diatur');
     
@@ -360,7 +388,11 @@ export class WalletService {
 
   async withdraw(tenantUuid: string, dto: { wallet_id: string; amount: number; pin: string; notes?: string }) {
     const wallet = await this.prisma.wallet.findFirst({
-      where: { id: dto.wallet_id, tenant_uuid: tenantUuid },
+      where: {
+        id: dto.wallet_id,
+        tenant_uuid: tenantUuid,
+        student: { deleted_at: null }
+      },
     });
     if (!wallet) throw new NotFoundException('Dompet tidak ditemukan');
     
@@ -438,11 +470,19 @@ export class WalletService {
 
     const [from, to] = await Promise.all([
       this.prisma.wallet.findFirst({
-        where: { id: dto.from_wallet_id, tenant_uuid: tenantUuid },
+        where: {
+          id: dto.from_wallet_id,
+          tenant_uuid: tenantUuid,
+          student: { deleted_at: null }
+        },
         include: { student: { select: { name: true } } },
       }),
       this.prisma.wallet.findFirst({
-        where: { id: dto.to_wallet_id, tenant_uuid: tenantUuid },
+        where: {
+          id: dto.to_wallet_id,
+          tenant_uuid: tenantUuid,
+          student: { deleted_at: null }
+        },
         include: { student: { select: { name: true } } },
       }),
     ]);

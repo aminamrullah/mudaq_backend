@@ -72,7 +72,10 @@ export class DashboardService {
         },
       }),
       this.prisma.wallet.aggregate({
-        where: { tenant_uuid: tenantUuid },
+        where: {
+          tenant_uuid: tenantUuid,
+          student: { deleted_at: null }
+        },
         _sum: { balance: true },
       }),
       this.prisma.attendance.groupBy({
