@@ -233,7 +233,7 @@ export class StudentService {
   async update(tenantUuid: string, id: string, dto: UpdateStudentDto) {
     try {
       const current = await this.findOne(tenantUuid, id);
-      const data = { ...dto };
+      const data: any = { ...dto };
 
       // Normalize status if provided
       if (data.status) {
