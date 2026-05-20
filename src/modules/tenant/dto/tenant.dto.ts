@@ -161,6 +161,21 @@ export class CreateTenantDto {
 
   @ApiProperty({ required: false })
   @IsOptional()
+  @IsBoolean()
+  addon_koperasi?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  addon_wa_gateway?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  addon_landing_page?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
   @IsString()
   expired_at?: string | Date;
 }

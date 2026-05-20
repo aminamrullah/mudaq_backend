@@ -31,11 +31,13 @@ export class UploadController {
           const rawFolder = (req.query.folder || '').toString();
           const folder = rawFolder.replace(/\.\.+/g, '').replace(/[^a-zA-Z0-9_\-\/]/g, '').replace(/^\/+/, '');
           
+          const tenantFolder = req.user?.tenant_uuid || 'system';
           const uploadsRoot = resolve(join(process.cwd(), 'public', 'uploads'));
-          const uploadPath = resolve(join(uploadsRoot, folder));
+          const tenantPath = join(uploadsRoot, tenantFolder);
+          const uploadPath = resolve(join(tenantPath, folder));
           
-          // Verify resolved path stays within uploads directory
-          if (!uploadPath.startsWith(uploadsRoot)) {
+          // Verify resolved path stays within tenant directory
+          if (!uploadPath.startsWith(tenantPath)) {
             cb(new BadRequestException('Invalid upload path'), null as any);
             return;
           }
@@ -91,11 +93,12 @@ export class UploadController {
     }
     this.logger.log(`File uploaded: ${file.filename} (${file.size} bytes) in folder: ${request.query.folder || 'root'}`);
     
+    const tenantFolder = request.user?.tenant_uuid || 'system';
     const folderPath = request.query.folder ? `/${request.query.folder}` : '';
     
     // Return the URL to the file
     return {
-      url: `/uploads${folderPath}/${file.filename}`,
+      url: `/uploads/${tenantFolder}${folderPath}/${file.filename}`,
       filename: file.filename,
     };
   }

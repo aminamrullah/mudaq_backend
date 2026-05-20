@@ -48,6 +48,11 @@ model Pesantren {
   landing_page_template String   @default("MODERN")
   landing_page_config   Json?    @default("{\"primaryColor\": \"#10b981\", \"secondaryColor\": \"#064e3b\", \"heroTitle\": \"Selamat Datang\", \"heroSubtitle\": \"Membangun Generasi Rabbani\", \"fontFamily\": \"Inter\"}")
   can_manage_landing_page Boolean @default(false)
+
+  // Add-ons / Fitur Tambahan
+  addon_koperasi        Boolean  @default(false)
+  addon_wa_gateway      Boolean  @default(false)
+  addon_landing_page    Boolean  @default(false)
   
   is_active   Boolean  @default(true)
   created_at  DateTime @default(now())

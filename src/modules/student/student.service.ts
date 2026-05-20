@@ -593,7 +593,7 @@ export class StudentService {
 
   async importExcel(tenantUuid: string, file: Express.Multer.File) {
     const xlsx = require('xlsx');
-    const workbook = xlsx.read(file.buffer, { type: 'buffer' });
+    const workbook = xlsx.read(file.buffer, { type: 'buffer', cellDates: true });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const data = xlsx.utils.sheet_to_json(sheet);
 
@@ -622,16 +622,46 @@ export class StudentService {
       return str.trim();
     };
 
+    // Helper to safely parse dates (handles JS Dates, Excel serials, strings)
+    const parseDate = (val: any): Date | undefined => {
+      if (!val) return undefined;
+      if (val instanceof Date) return isNaN(val.getTime()) ? undefined : val;
+      if (typeof val === 'number') {
+        const d = new Date(Math.round((val - 25569) * 86400 * 1000));
+        return isNaN(d.getTime()) ? undefined : d;
+      }
+      if (typeof val === 'string') {
+        if (val.includes('-') || val.includes('/')) {
+          const parts = val.split(/[-/]/);
+          if (parts.length === 3) {
+             let day, month, year;
+             if (parts[0].length === 4) { // YYYY-MM-DD
+                year = parseInt(parts[0]); month = parseInt(parts[1]) - 1; day = parseInt(parts[2]);
+             } else { // DD-MM-YYYY
+                day = parseInt(parts[0]); month = parseInt(parts[1]) - 1; year = parseInt(parts[2]);
+                if (year < 100) year += 2000;
+             }
+             const d = new Date(year, month, day);
+             if (!isNaN(d.getTime())) return d;
+          }
+        }
+        const d = new Date(val);
+        if (!isNaN(d.getTime())) return d;
+      }
+      return undefined;
+    };
+
     for (const row of data as any[]) {
       try {
+        const parsedBirthDate = parseDate(getValue(row, ['Tanggal Lahir', 'birth_date', 'DoB']));
         const studentDto: CreateStudentDto = {
           name: getValue(row, ['Nama', 'Nama Lengkap', 'name', 'Full Name']),
           nis: formatValue(getValue(row, ['NIS', 'nis', 'Nomor Induk'])),
           nisn: formatValue(getValue(row, ['NISN', 'nisn'])),
           nik: formatValue(getValue(row, ['NIK', 'nik', 'No. KTP'])) || '',
-          gender: ['P', 'Perempuan', 'Female', 'Wanita'].includes(getValue(row, ['Jenis Kelamin', 'Gender', 'JK']) || '') ? 'P' : 'L',
+          gender: ['P', 'Perempuan', 'Female', 'Wanita', 'W'].includes(getValue(row, ['Jenis Kelamin', 'Gender', 'JK'])?.toString().trim().toUpperCase() || '') ? 'P' : 'L',
           birth_place: getValue(row, ['Tempat Lahir', 'birth_place', 'PoB']),
-          birth_date: getValue(row, ['Tanggal Lahir', 'birth_date', 'DoB']),
+          birth_date: parsedBirthDate ? parsedBirthDate.toISOString() : '',
           address: getValue(row, ['Alamat', 'address', 'Home Address']),
           father_name: getValue(row, ['Nama Ayah', 'father_name', 'Father']),
           father_job: getValue(row, ['Pekerjaan Ayah', 'father_job', 'Father Job']),
@@ -659,7 +689,7 @@ export class StudentService {
           throw new Error('Kolom NIK kosong atau tidak ditemukan');
         }
         if (!studentDto.birth_date) {
-          throw new Error('Kolom Tanggal Lahir kosong atau tidak ditemukan');
+          throw new Error('Kolom Tanggal Lahir salah format atau tidak ditemukan');
         }
         if (!studentDto.mother_name) {
           throw new Error('Kolom Nama Ibu kosong atau tidak ditemukan');
