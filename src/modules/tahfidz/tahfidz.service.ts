@@ -100,17 +100,22 @@ export class TahfidzService {
     });
   }
 
-  async updateRecord(id: string, dto: UpdateTahfidzRecordDto, userId?: string, role?: string) {
+  async updateRecord(tenantId: string, id: string, dto: UpdateTahfidzRecordDto, userId?: string, role?: string) {
+    const record = await this.prisma.tahfidzRecord.findUnique({
+      where: { id },
+      include: { student: true }
+    });
+
+    if (!record || record.tenant_uuid !== tenantId) {
+      throw new Error('Data tidak ditemukan atau Anda tidak memiliki akses');
+    }
+
     if (role === 'USTAD' && userId) {
       const teacher = await this.prisma.teacher.findUnique({
         where: { user_id: userId },
       });
-      const record = await this.prisma.tahfidzRecord.findUnique({
-        where: { id },
-        include: { student: true }
-      });
 
-      if (!teacher || !record) throw new Error('Data tidak ditemukan');
+      if (!teacher) throw new Error('Profil guru tidak ditemukan');
 
       if (record.category === 'QURAN') {
         if (!teacher.can_manage_quran || record.student.quran_teacher_id !== teacher.id) {
@@ -132,17 +137,22 @@ export class TahfidzService {
     });
   }
 
-  async deleteRecord(id: string, userId?: string, role?: string) {
+  async deleteRecord(tenantId: string, id: string, userId?: string, role?: string) {
+    const record = await this.prisma.tahfidzRecord.findUnique({
+      where: { id },
+      include: { student: true }
+    });
+
+    if (!record || record.tenant_uuid !== tenantId) {
+      throw new Error('Data tidak ditemukan atau Anda tidak memiliki akses');
+    }
+
     if (role === 'USTAD' && userId) {
       const teacher = await this.prisma.teacher.findUnique({
         where: { user_id: userId },
       });
-      const record = await this.prisma.tahfidzRecord.findUnique({
-        where: { id },
-        include: { student: true }
-      });
 
-      if (!teacher || !record) throw new Error('Data tidak ditemukan');
+      if (!teacher) throw new Error('Profil guru tidak ditemukan');
 
       if (record.category === 'QURAN') {
         if (!teacher.can_manage_quran || record.student.quran_teacher_id !== teacher.id) {

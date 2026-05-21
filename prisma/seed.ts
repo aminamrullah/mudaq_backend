@@ -14,7 +14,7 @@ async function main() {
     create: {
       name: 'Super Admin',
       email: 'superadmin@pesantren.id',
-      phone: '081000000000',
+      phone: '628100000000',
       password: superAdminPassword,
       role: Role.SUPER_ADMIN,
     },
@@ -46,7 +46,7 @@ async function main() {
     create: {
       name: 'Admin Darul Hikmah',
       email: 'admin@darulhikmah.sch.id',
-      phone: '081111111111',
+      phone: '628111111111',
       password: adminPassword,
       role: Role.ADMIN_PESANTREN,
       tenant_uuid: pesantren.id,
@@ -62,7 +62,7 @@ async function main() {
     create: {
       name: 'Bendahara',
       email: 'finance@darulhikmah.sch.id',
-      phone: '081222222222',
+      phone: '628122222222',
       password: financePassword,
       role: Role.FINANCE_PESANTREN,
       tenant_uuid: pesantren.id,
@@ -113,7 +113,7 @@ async function main() {
     create: {
       name: 'Ustadz Muhammad',
       email: 'ustad@darulhikmah.sch.id',
-      phone: '081333333333',
+      phone: '628133333333',
       password: await bcrypt.hash('ustad123', 12),
       role: Role.USTAD,
       tenant_uuid: pesantren.id,
@@ -126,7 +126,7 @@ async function main() {
     create: {
       name: 'Ustadz Muhammad',
       nip: '198801012020011001',
-      phone: '081333333333',
+      phone: '628133333333',
       tenant_uuid: pesantren.id,
       user_id: ustadUser.id,
       is_tahfidz_teacher: true,
@@ -144,7 +144,7 @@ async function main() {
         gender: i % 2 === 0 ? 'P' : 'L',
         birth_place: 'Bogor',
         birth_date: new Date(`2010-0${i}-15`),
-        parent_phone: `08140000000${i}`,
+        parent_phone: `628140000000${i}`,
         father_name: `Bapak Santri ${i}`,
         mother_name: `Ibu Santri ${i}`,
         tenant_uuid: pesantren.id,
@@ -186,7 +186,7 @@ async function main() {
     create: {
       name: 'Wali Santri 1',
       email: 'wali@darulhikmah.sch.id',
-      phone: '081400000001',
+      phone: '6281400000001',
       password: await bcrypt.hash('wali123', 12),
       role: Role.WALI_SANTRI,
       tenant_uuid: pesantren.id,

@@ -40,17 +40,7 @@ export class StudentService {
 
       // ── Phone Tenant Isolation Check ──
       if (data.parent_phone) {
-        const normalizedPhone = normalizePhone(data.parent_phone);
-        const conflict = await this.prisma.student.findFirst({
-          where: {
-            parent_phone: normalizedPhone,
-            tenant_uuid: { not: tenantUuid },
-            deleted_at: null,
-          },
-        });
-        if (conflict) {
-          throw new ConflictException(`Nomor WhatsApp ${normalizedPhone} sudah terdaftar di pesantren lain.`);
-        }
+        await this.validateParentPhone(tenantUuid, data.parent_phone);
       }
 
       return await this.prisma.$transaction(async (tx) => {
@@ -242,6 +232,9 @@ export class StudentService {
 
       if (data.parent_phone) {
         data.parent_phone = normalizePhone(data.parent_phone);
+        if (data.parent_phone !== current.parent_phone) {
+          await this.validateParentPhone(tenantUuid, data.parent_phone);
+        }
       }
 
       return await this.prisma.$transaction(async (tx) => {
@@ -502,6 +495,36 @@ export class StudentService {
     }
   }
 
+  private async validateParentPhone(tenantUuid: string, phone?: string) {
+    if (!phone) return;
+    const normalizedPhone = normalizePhone(phone);
+    if (!normalizedPhone) return;
+
+    // Check if phone number is already used in a DIFFERENT tenant as a student parent_phone
+    const otherStudent = await this.prisma.student.findFirst({
+      where: {
+        parent_phone: normalizedPhone,
+        tenant_uuid: { not: tenantUuid },
+        deleted_at: null,
+      },
+    });
+    if (otherStudent) {
+      throw new ConflictException(`Nomor WhatsApp ${normalizedPhone} sudah digunakan oleh wali santri di pesantren lain.`);
+    }
+
+    // Check if phone number is already registered in a DIFFERENT tenant in User table
+    const otherUser = await this.prisma.user.findFirst({
+      where: {
+        phone: normalizedPhone,
+        tenant_uuid: { not: tenantUuid },
+        deleted_at: null,
+      },
+    });
+    if (otherUser) {
+      throw new ConflictException(`Nomor WhatsApp ${normalizedPhone} sudah terdaftar di pesantren lain.`);
+    }
+  }
+
   private async recordHistory(
     tx: Prisma.TransactionClient,
     tenantUuid: string,
@@ -612,7 +635,7 @@ export class StudentService {
     // Helper to format numeric values from Excel (handles scientific notation)
     const formatValue = (val: any): string | undefined => {
       if (val === undefined || val === null) return undefined;
-      const str = val.toString();
+      const str = val.toString().replace(/^'/, '');
       if (str.includes('E') || str.includes('e')) {
         const num = Number(val);
         if (!isNaN(num)) {
@@ -706,6 +729,48 @@ export class StudentService {
     }
 
     return results;
+  }
+
+  generateTemplate(): Buffer {
+    const xlsx = require('xlsx');
+    const headers = [
+      'Nama', 'NIS', 'NISN', 'NIK', 'Jenis Kelamin',
+      'Tempat Lahir', 'Tanggal Lahir', 'Alamat',
+      'Nama Ayah', 'Pekerjaan Ayah', 'Nama Ibu', 'Pekerjaan Ibu',
+      'No HP Wali', 'Pendidikan Terakhir', 'Berat', 'Tinggi',
+      'Tahun Masuk', 'Provinsi', 'Kota', 'Kecamatan', 'Desa'
+    ];
+
+    const sample = [
+      'Ahmad Santri', '20260001', "'0012345678", "'1234567890123456", 'L',
+      'Malang', '2010-05-15', 'Jl. Pesantren No. 123',
+      'Bpk. Fulan', 'Wiraswasta', 'Ibu Fulanah', 'IRT',
+      "'081234567890", 'SD/MI', '45', '160',
+      '2026', 'Jawa Timur', 'Malang', 'Ngadiluwih', 'Purwokerto'
+    ];
+
+    const ws = xlsx.utils.aoa_to_sheet([headers, sample]);
+
+    // Format columns properly
+    const range = xlsx.utils.decode_range(ws['!ref']);
+    for (let C = range.s.c; C <= range.e.c; ++C) {
+      const header = headers[C];
+      // Set column width for important fields
+      if (['NIS', 'NISN', 'NIK', 'No HP Wali', 'Nama', 'Alamat'].includes(header)) {
+        if (!ws['!cols']) ws['!cols'] = [];
+        ws['!cols'][C] = { wch: 25 };
+        
+        // Attempt to set text format
+        const cellRef = xlsx.utils.encode_cell({ r: 1, c: C });
+        if (ws[cellRef]) {
+          ws[cellRef].z = '@';
+        }
+      }
+    }
+
+    const wb = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(wb, ws, "Template Santri");
+    return xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
   }
 
   // ── Health Records ──

@@ -176,6 +176,11 @@ export class CreateTenantDto {
 
   @ApiProperty({ required: false })
   @IsOptional()
+  @IsBoolean()
+  addon_inventaris?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
   @IsString()
   expired_at?: string | Date;
 }

@@ -53,6 +53,7 @@ model Pesantren {
   addon_koperasi        Boolean  @default(false)
   addon_wa_gateway      Boolean  @default(false)
   addon_landing_page    Boolean  @default(false)
+  addon_inventaris      Boolean  @default(false)
   
   is_active   Boolean  @default(true)
   created_at  DateTime @default(now())
@@ -114,6 +115,11 @@ model Pesantren {
   promotions          Promotion[]
   subject_categories  SubjectCategory[]
   kitabs              Kitab[]
+
+  inventory_items      InventoryItem[]
+  inventory_categories InventoryCategory[]
+  inventory_locations  InventoryLocation[]
+  inventory_mutations  InventoryMutation[]
 
   // PPDB (Student Registration)
   ppdb_is_active      Boolean  @default(false)
@@ -1649,5 +1655,87 @@ model PpdbWave {
   @@unique([tenant_uuid, name])
   @@index([tenant_uuid])
   @@map("ppdb_waves")
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  INVENTORY MANAGEMENT
+// ═══════════════════════════════════════════════════════════════
+
+model InventoryCategory {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_uuid String   @db.Uuid
+  name        String
+  description String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  pesantren Pesantren       @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  items     InventoryItem[]
+
+  @@unique([tenant_uuid, name])
+  @@index([tenant_uuid])
+  @@map("inventory_categories")
+}
+
+model InventoryLocation {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_uuid String   @db.Uuid
+  name        String
+  description String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  pesantren Pesantren       @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  items     InventoryItem[]
+
+  @@unique([tenant_uuid, name])
+  @@index([tenant_uuid])
+  @@map("inventory_locations")
+}
+
+model InventoryItem {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenant_uuid     String   @db.Uuid
+  category_id     String?  @db.Uuid
+  location_id     String?  @db.Uuid
+  name            String
+  code            String?  // unique barcode or custom asset code
+  description     String?
+  quantity        Int      @default(1)
+  condition       String   @default("baik") // baik, rusak_ringan, rusak_berat
+  purchase_date   DateTime?
+  purchase_price  Decimal? @db.Decimal(12,2)
+  source_of_funds String?  // dana bos, donasi, yayasan, dll
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  pesantren Pesantren          @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  category  InventoryCategory? @relation(fields: [category_id], references: [id], onDelete: SetNull)
+  location  InventoryLocation? @relation(fields: [location_id], references: [id], onDelete: SetNull)
+  mutations InventoryMutation[]
+
+  @@unique([tenant_uuid, code])
+  @@index([tenant_uuid])
+  @@map("inventory_items")
+}
+
+model InventoryMutation {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenant_uuid   String   @db.Uuid
+  item_id       String   @db.Uuid
+  type          String   // in (pembelian/penambahan), out (rusak/hilang/dibuang), move (pindah lokasi), condition_change (perubahan kondisi)
+  quantity      Int      // positive/negative change
+  from_location String?
+  to_location   String?
+  description   String?  // e.g. "Dipindahkan ke Kamar A"
+  created_by    String?  @db.Uuid
+  created_at    DateTime @default(now())
+
+  pesantren Pesantren     @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  item      InventoryItem @relation(fields: [item_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_uuid])
+  @@index([item_id])
+  @@map("inventory_mutations")
 }
 

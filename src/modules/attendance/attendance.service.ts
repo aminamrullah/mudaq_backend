@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateAttendanceDto, BulkAttendanceDto } from './dto/attendance.dto';
 
@@ -8,6 +8,13 @@ export class AttendanceService {
   constructor(private prisma: PrismaService) {}
 
   async create(tenantUuid: string, dto: CreateAttendanceDto) {
+    const student = await this.prisma.student.findFirst({
+      where: { id: dto.student_id, tenant_uuid: tenantUuid, deleted_at: null },
+    });
+    if (!student) {
+      throw new ForbiddenException('Akses ditolak: Santri tidak ditemukan atau bukan milik pesantren Anda');
+    }
+
     const scheduleId = dto.schedule_id || null;
     return this.prisma.attendance.upsert({
       where: {
@@ -30,6 +37,15 @@ export class AttendanceService {
   }
 
   async bulkCreate(tenantUuid: string, dto: BulkAttendanceDto) {
+    const studentIds = dto.items.map((item) => item.student_id);
+    const students = await this.prisma.student.findMany({
+      where: { id: { in: studentIds }, tenant_uuid: tenantUuid, deleted_at: null },
+      select: { id: true },
+    });
+    if (students.length !== new Set(studentIds).size) {
+      throw new ForbiddenException('Akses ditolak: Satu atau lebih santri tidak ditemukan atau bukan milik pesantren Anda');
+    }
+
     const scheduleId = dto.schedule_id || null;
     const results = await this.prisma.$transaction(async (tx) => {
       // 1. Mark student attendance

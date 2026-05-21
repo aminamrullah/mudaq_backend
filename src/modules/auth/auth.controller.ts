@@ -74,6 +74,30 @@ export class AuthController {
     return result;
   }
 
+  @Post('google')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Login or register via Google' })
+  async googleLogin(@Body() dto: { idToken: string }, @Request() req: any, @Res({ passthrough: true }) res: express.Response) {
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const ua = req.headers['user-agent'];
+    const result = (await this.authService.googleLogin(dto.idToken, { ip, ua })) as any;
+    if (result.access_token && result.refresh_token) {
+      this.setAuthCookies(res, result.access_token, result.refresh_token);
+    }
+    return result;
+  }
+
+  @Post('bind-phone')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Bind phone number to Google account' })
+  async bindPhone(@Body() dto: { tempToken: string; phone: string; otp: string }, @Request() req: any, @Res({ passthrough: true }) res: express.Response) {
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const ua = req.headers['user-agent'];
+    const result = await this.authService.bindPhone(dto.tempToken, dto.phone, dto.otp, { ip, ua });
+    this.setAuthCookies(res, result.access_token, result.refresh_token);
+    return result;
+  }
+
 
   @Post('register')
   @UseGuards(AuthGuard('jwt'))

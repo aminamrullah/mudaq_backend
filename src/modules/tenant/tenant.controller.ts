@@ -132,7 +132,7 @@ export class TenantController {
     const tenant = await this.tenantService.findOne(req.user.tenant_uuid);
     
     // Check if landing page management is allowed for this pesantren
-    if (!tenant.can_manage_landing_page) {
+    if (!(tenant as any).addon_landing_page || !tenant.can_manage_landing_page) {
       // If not allowed, they shouldn't be able to update landing page related fields
       const lpFields = ['landing_page_template', 'landing_page_config'];
       const tryingToUpdateLP = Object.keys(dto).some(key => lpFields.includes(key));

@@ -199,8 +199,12 @@ export class WalisantriController {
   @Get('announcements')
   @Roles(Role.WALI_SANTRI)
   @ApiOperation({ summary: 'Get announcements for this pesantren' })
-  getAnnouncements(@CurrentUser('tenant_uuid') t: string) {
-    return this.svc.getAnnouncements(t);
+  getAnnouncements(
+    @CurrentUser('tenant_uuid') t: string,
+    @CurrentUser('phone') phone: string,
+    @Query('studentId') studentId?: string,
+  ) {
+    return this.svc.getAnnouncements(t, phone, studentId);
   }
 
   // ── Koperasi ──

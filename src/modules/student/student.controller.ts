@@ -1,3 +1,4 @@
+import * as express from 'express';
 import {
   Controller,
   Get,
@@ -10,6 +11,7 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFile,
+  Res,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AuthGuard } from '@nestjs/passport';
@@ -57,6 +59,16 @@ export class StudentController {
     @UploadedFile() file: Express.Multer.File,
   ) {
     return this.studentService.importExcel(t, file);
+  }
+
+  @Get('import/template')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN)
+  @ApiOperation({ summary: 'Download Excel template for import' })
+  downloadTemplate(@Res() res: express.Response) {
+    const buffer = this.studentService.generateTemplate();
+    res.setHeader('Content-Disposition', 'attachment; filename=template_import_santri.xlsx');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(buffer);
   }
 
   @Get()

@@ -44,22 +44,24 @@ export class TahfidzController {
   @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.USTAD)
   @ApiOperation({ summary: 'Update tahfidz record' })
   updateRecord(
+    @CurrentUser('tenant_uuid') t: string,
     @CurrentUser('id') userId: string,
     @CurrentUser('role') role: string,
     @Param('id') id: string,
     @Body() dto: UpdateTahfidzRecordDto
   ) {
-    return this.tahfidzService.updateRecord(id, dto, userId, role);
+    return this.tahfidzService.updateRecord(t, id, dto, userId, role);
   }
 
   @Delete(':id')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.USTAD)
   @ApiOperation({ summary: 'Delete tahfidz record' })
   deleteRecord(
+    @CurrentUser('tenant_uuid') t: string,
     @CurrentUser('id') userId: string,
     @CurrentUser('role') role: string,
     @Param('id') id: string
   ) {
-    return this.tahfidzService.deleteRecord(id, userId, role);
+    return this.tahfidzService.deleteRecord(t, id, userId, role);
   }
 }

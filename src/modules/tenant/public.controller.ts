@@ -81,15 +81,16 @@ export class PublicController {
         description: true,
         landing_page_template: true,
         landing_page_config: true,
+        addon_landing_page: true,
         posts: {
           where: { is_published: true },
           orderBy: { created_at: 'desc' },
           take: 6,
         },
-      },
+      } as any,
     });
 
-    if (!pesantren) throw new NotFoundException('Landing page tidak ditemukan');
+    if (!pesantren || !(pesantren as any).addon_landing_page) throw new NotFoundException('Landing page tidak ditemukan');
     return pesantren;
   }
 

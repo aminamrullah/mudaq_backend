@@ -30,6 +30,7 @@ import { KoperasiModule } from './modules/koperasi/koperasi.module';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { PpdbModule } from './modules/ppdb/ppdb.module';
+import { InventoryModule } from './modules/inventory/inventory.module';
 
 @Module({
   imports: [
@@ -70,6 +71,7 @@ import { PpdbModule } from './modules/ppdb/ppdb.module';
     MailModule,
     KoperasiModule,
     PpdbModule,
+    InventoryModule,
   ],
   providers: [
     {

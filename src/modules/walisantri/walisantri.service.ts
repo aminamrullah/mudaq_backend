@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { normalizePhone } from '../../common/utils/phone.util';
@@ -23,12 +24,15 @@ export class WalisantriService {
     if (!phone || phone.length < 5) {
       throw new ForbiddenException('Akses ditolak: Nomor telepon tidak valid');
     }
-    const normalizedPhone = normalizePhone(phone);
+    const cleanPhone = phone.replace(/[^0-9]/g, '');
+    const normalizedPhone = normalizePhone(cleanPhone);
+    const legacyPhone = normalizedPhone.startsWith('628') ? '0' + normalizedPhone.slice(2) : cleanPhone;
+    const phoneVariants = [normalizedPhone, legacyPhone, cleanPhone, phone].filter(v => v && v.length >= 5);
+
     const student = await this.prisma.student.findFirst({
       where: {
         id: studentId,
-        tenant_uuid: tenantUuid,
-        parent_phone: normalizedPhone,
+        parent_phone: { in: phoneVariants },
         status: { in: ['AKTIF', 'active'] },
         deleted_at: null,
       },
@@ -52,7 +56,6 @@ export class WalisantriService {
 
     const students = await this.prisma.student.findMany({
       where: { 
-        tenant_uuid: tenantUuid, 
         parent_phone: { in: phoneVariants },
         status: { in: ['AKTIF', 'active'] },
         deleted_at: null 
@@ -128,20 +131,24 @@ export class WalisantriService {
     
     // Link the student
     await this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.findUnique({ where: { id: userId } });
+      if (user) {
+        if (user.tenant_uuid && user.tenant_uuid !== student.tenant_uuid) {
+          throw new ConflictException('Anda tidak dapat menghubungkan santri dari pesantren lain.');
+        }
+        if (!user.tenant_uuid) {
+          await tx.user.update({
+            where: { id: userId },
+            data: { tenant_uuid: student.tenant_uuid },
+          });
+        }
+      }
+
       // Update student's parent_phone to match this user
       await tx.student.update({
         where: { id: student.id },
         data: { parent_phone: normalizedPhone },
       });
-      
-      // Also update user's tenant_uuid if it's null
-      const user = await tx.user.findUnique({ where: { id: userId } });
-      if (user && !user.tenant_uuid) {
-        await tx.user.update({
-          where: { id: userId },
-          data: { tenant_uuid: student.tenant_uuid },
-        });
-      }
     });
     
     return { message: 'Santri berhasil dihubungkan', student_id: student.id };
@@ -180,9 +187,9 @@ export class WalisantriService {
 
   // ── Student Detail ──
   async getStudentDetail(tenantUuid: string, phone: string, studentId: string) {
-    await this.verifyOwnership(tenantUuid, phone, studentId);
+    const student = await this.verifyOwnership(tenantUuid, phone, studentId);
     const studentDetail = await this.prisma.student.findFirst({
-      where: { id: studentId, tenant_uuid: tenantUuid },
+      where: { id: studentId, tenant_uuid: student.tenant_uuid },
       include: {
         classroom: true,
         dormitory: true,
@@ -217,8 +224,8 @@ export class WalisantriService {
 
   // ── Attendance ──
   async getAttendance(tenantUuid: string, phone: string, studentId: string, month?: string) {
-    await this.verifyOwnership(tenantUuid, phone, studentId);
-    const where: any = { tenant_uuid: tenantUuid, student_id: studentId };
+    const student = await this.verifyOwnership(tenantUuid, phone, studentId);
+    const where: any = { tenant_uuid: student.tenant_uuid, student_id: studentId };
     if (month) {
       const start = new Date(`${month}-01`);
       const end = new Date(start);
@@ -245,9 +252,9 @@ export class WalisantriService {
 
   // ── Tahfidz ──
   async getTahfidz(tenantUuid: string, phone: string, studentId: string, category?: string) {
-    await this.verifyOwnership(tenantUuid, phone, studentId);
+    const student = await this.verifyOwnership(tenantUuid, phone, studentId);
     
-    const where: any = { tenant_uuid: tenantUuid, student_id: studentId };
+    const where: any = { tenant_uuid: student.tenant_uuid, student_id: studentId };
     if (category) where.category = category.toUpperCase();
 
     const records = await this.prisma.tahfidzRecord.findMany({
@@ -277,9 +284,9 @@ export class WalisantriService {
 
   // ── Health ──
   async getHealth(tenantUuid: string, phone: string, studentId: string) {
-    await this.verifyOwnership(tenantUuid, phone, studentId);
+    const student = await this.verifyOwnership(tenantUuid, phone, studentId);
     return this.prisma.healthRecord.findMany({
-      where: { tenant_uuid: tenantUuid, student_id: studentId },
+      where: { tenant_uuid: student.tenant_uuid, student_id: studentId },
       orderBy: { date: 'desc' },
       take: 50,
     });
@@ -287,9 +294,9 @@ export class WalisantriService {
 
   // ── Violations ──
   async getViolations(tenantUuid: string, phone: string, studentId: string) {
-    await this.verifyOwnership(tenantUuid, phone, studentId);
+    const student = await this.verifyOwnership(tenantUuid, phone, studentId);
     const records = await this.prisma.violation.findMany({
-      where: { tenant_uuid: tenantUuid, student_id: studentId },
+      where: { tenant_uuid: student.tenant_uuid, student_id: studentId },
       orderBy: { date: 'desc' },
     });
     const totalPoints = records.reduce((sum, v) => sum + v.points, 0);
@@ -298,9 +305,9 @@ export class WalisantriService {
 
   // ── Permissions / Leave ──
   async getPermissions(tenantUuid: string, phone: string, studentId: string) {
-    await this.verifyOwnership(tenantUuid, phone, studentId);
+    const student = await this.verifyOwnership(tenantUuid, phone, studentId);
     return this.prisma.studentPermission.findMany({
-      where: { tenant_uuid: tenantUuid, student_id: studentId },
+      where: { tenant_uuid: student.tenant_uuid, student_id: studentId },
       orderBy: { created_at: 'desc' },
     });
   }
@@ -314,7 +321,7 @@ export class WalisantriService {
     const student = await this.verifyOwnership(tenantUuid, phone, studentId);
     const permission = await this.prisma.studentPermission.create({
       data: {
-        tenant_uuid: tenantUuid,
+        tenant_uuid: student.tenant_uuid,
         student_id: studentId,
         type: body.type || 'keperluan',
         reason: body.reason,
@@ -328,7 +335,7 @@ export class WalisantriService {
     try {
       const admins = await this.prisma.user.findMany({
         where: {
-          tenant_uuid: tenantUuid,
+          tenant_uuid: student.tenant_uuid,
           role: { in: ['ADMIN_PESANTREN', 'STAFF_PESANTREN'] },
           deleted_at: null,
           is_active: true,
@@ -358,7 +365,7 @@ Mohon segera periksa dashboard untuk memberikan persetujuan.`;
 
         // WhatsApp alert
         if (admin.phone) {
-          await this.whatsappService.sendMessage(admin.phone, message, tenantUuid);
+          await this.whatsappService.sendMessage(admin.phone, message, student.tenant_uuid);
         }
       }
     } catch (err) {
@@ -370,8 +377,8 @@ Mohon segera periksa dashboard untuk memberikan persetujuan.`;
 
   // ── Bills ──
   async getBills(tenantUuid: string, phone: string, studentId: string, status?: string) {
-    await this.verifyOwnership(tenantUuid, phone, studentId);
-    const where: any = { tenant_uuid: tenantUuid, student_id: studentId };
+    const student = await this.verifyOwnership(tenantUuid, phone, studentId);
+    const where: any = { tenant_uuid: student.tenant_uuid, student_id: studentId };
     if (status) where.status = status;
     return this.prisma.bill.findMany({
       where,
@@ -382,9 +389,9 @@ Mohon segera periksa dashboard untuk memberikan persetujuan.`;
 
   // ── Report Cards ──
   async getReportCards(tenantUuid: string, phone: string, studentId: string) {
-    await this.verifyOwnership(tenantUuid, phone, studentId);
+    const student = await this.verifyOwnership(tenantUuid, phone, studentId);
     return this.prisma.reportCard.findMany({
-      where: { tenant_uuid: tenantUuid, student_id: studentId, status: 'published' },
+      where: { tenant_uuid: student.tenant_uuid, student_id: studentId, status: 'published' },
       include: {
         academic_year: { select: { name: true } },
         period: { select: { name: true } },
@@ -422,9 +429,14 @@ Mohon segera periksa dashboard untuk memberikan persetujuan.`;
   }
 
   // ── Announcements ──
-  async getAnnouncements(tenantUuid: string) {
+  async getAnnouncements(tenantUuid: string, phone: string, studentId?: string) {
+    let targetTenant = tenantUuid;
+    if (studentId && studentId !== 'undefined' && studentId !== 'null' && studentId.trim() !== '') {
+      const student = await this.verifyOwnership(tenantUuid, phone, studentId);
+      targetTenant = student.tenant_uuid;
+    }
     return this.prisma.post.findMany({
-      where: { tenant_uuid: tenantUuid, is_published: true },
+      where: { tenant_uuid: targetTenant, is_published: true },
       orderBy: { created_at: 'desc' },
       take: 20,
     });
@@ -453,10 +465,10 @@ Mohon segera periksa dashboard untuk memberikan persetujuan.`;
     studentId: string,
     body: { daily_limit?: number | null; weekly_limit?: number | null },
   ) {
-    await this.verifyOwnership(tenantUuid, phone, studentId);
+    const student = await this.verifyOwnership(tenantUuid, phone, studentId);
 
     const wallet = await this.prisma.wallet.findFirst({
-      where: { student_id: studentId, tenant_uuid: tenantUuid },
+      where: { student_id: studentId, tenant_uuid: student.tenant_uuid },
     });
     if (!wallet) throw new NotFoundException('Wallet santri tidak ditemukan');
 
@@ -501,10 +513,10 @@ Mohon segera periksa dashboard untuk memberikan persetujuan.`;
     phone: string,
     studentId: string,
   ) {
-    await this.verifyOwnership(tenantUuid, phone, studentId);
+    const student = await this.verifyOwnership(tenantUuid, phone, studentId);
 
     const wallet = await this.prisma.wallet.findFirst({
-      where: { student_id: studentId, tenant_uuid: tenantUuid },
+      where: { student_id: studentId, tenant_uuid: student.tenant_uuid },
     });
     if (!wallet) throw new NotFoundException('Wallet santri tidak ditemukan');
 

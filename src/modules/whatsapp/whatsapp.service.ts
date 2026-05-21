@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WhatsappProvider, UpdateWhatsappSettingsDto } from './dto/whatsapp.dto';
 import makeWASocket, { 
@@ -44,6 +44,15 @@ export class WhatsappService implements OnModuleInit {
     }
   }
 
+  private async checkAddon(tenantUuid?: string | null): Promise<boolean> {
+    if (!tenantUuid) return true;
+    const pesantren = await this.prisma.pesantren.findUnique({
+      where: { id: tenantUuid },
+      select: { addon_wa_gateway: true }
+    });
+    return !!pesantren?.addon_wa_gateway;
+  }
+
   async getSettings(tenantUuid?: string | null) {
     if (!tenantUuid) {
       const configs = await this.prisma.globalConfig.findMany({
@@ -55,17 +64,29 @@ export class WhatsappService implements OnModuleInit {
       };
     }
 
+    const hasAddon = await this.checkAddon(tenantUuid);
     const settings = await this.prisma.setting.findMany({
       where: { tenant_uuid: tenantUuid, key: { startsWith: 'WA_' } },
     });
 
+    const provider = settings.find(s => s.key === 'WA_PROVIDER')?.value as WhatsappProvider || WhatsappProvider.FONNTE;
+
     return {
-      provider: settings.find(s => s.key === 'WA_PROVIDER')?.value as WhatsappProvider || WhatsappProvider.FONNTE,
-      fonnte_token: settings.find(s => s.key === 'WA_FONNTE_TOKEN')?.value || '',
+      provider: hasAddon ? provider : WhatsappProvider.BAILEYS,
+      fonnte_token: hasAddon ? (settings.find(s => s.key === 'WA_FONNTE_TOKEN')?.value || '') : '',
     };
   }
 
   async updateSettings(dto: UpdateWhatsappSettingsDto, tenantUuid?: string | null) {
+    if (tenantUuid) {
+      const hasAddon = await this.checkAddon(tenantUuid);
+      if (!hasAddon && (dto.provider === WhatsappProvider.FONNTE || dto.fonnte_token)) {
+        throw new ForbiddenException(
+          'Layanan WA Gateway Fonnte belum aktif untuk pesantren Anda. Silakan hubungi Superadmin.',
+        );
+      }
+    }
+
     const keys = [
       { key: 'WA_PROVIDER', value: dto.provider },
       { key: 'WA_FONNTE_TOKEN', value: dto.fonnte_token || '' },
