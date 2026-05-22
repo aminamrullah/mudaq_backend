@@ -208,7 +208,57 @@ export class WalletService {
     if (!wallet) throw new NotFoundException('Dompet tidak ditemukan');
 
     const externalId = `TOPUP-${dto.wallet_id.slice(0, 8)}-${uuidv4().slice(0, 8)}`;
-    const xenditKey = this.config.get<string>('XENDIT_SECRET_KEY');
+    const xenditKey = this.config.get<string>('XENDIT_SECRET_KEY') || '';
+    const isDemo = xenditKey.startsWith('xnd_development_');
+
+    if (isDemo) {
+      this.logger.log(`[DEMO MODE] Auto-paying topup for wallet ${dto.wallet_id}`);
+      return await this.prisma.$transaction(async (tx) => {
+        const topupLog = await tx.topupLog.create({
+          data: {
+            tenant_uuid: tenantUuid,
+            wallet_id: dto.wallet_id,
+            external_id: externalId,
+            xendit_id: `demo_${Date.now()}`,
+            amount: new Prisma.Decimal(dto.amount),
+            notes: 'Demo Auto Payment',
+            platform_fee: 0,
+            surcharge_fee: 0,
+            status: 'success',
+            paid_at: new Date(),
+            net_amount: new Prisma.Decimal(dto.amount),
+          },
+        });
+
+        const balanceBefore = Number(wallet.balance);
+        const balanceAfter = balanceBefore + Number(dto.amount);
+
+        await tx.wallet.update({
+          where: { id: wallet.id },
+          data: { balance: new Prisma.Decimal(balanceAfter) },
+        });
+
+        await tx.walletTransaction.create({
+          data: {
+            tenant_uuid: tenantUuid,
+            wallet_id: wallet.id,
+            type: 'deposit',
+            amount: new Prisma.Decimal(dto.amount),
+            balance_before: new Prisma.Decimal(balanceBefore),
+            balance_after: new Prisma.Decimal(balanceAfter),
+            reference: externalId,
+            description: `Top Up e-Wallet via Demo Payment Gateway`,
+          },
+        });
+
+        return { 
+          external_id: externalId,
+          amount: dto.amount,
+          status: 'PAID',
+          demo_mode: true
+        };
+      });
+    }
 
     let paymentData: any;
     let surcharge = 0;

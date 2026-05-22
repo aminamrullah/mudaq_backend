@@ -58,6 +58,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
             name: true,
             subscription_status: true,
             expired_at: true,
+            deleted_at: true,
           },
         },
       },
@@ -72,8 +73,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Akun Anda tidak aktif');
     }
 
-    // Check tenant subscription
+    // Check tenant subscription and deletion
     if (user.pesantren) {
+      if (user.pesantren.deleted_at) {
+        throw new UnauthorizedException('Pesantren Anda telah dihapus');
+      }
       if (user.pesantren.subscription_status === 'suspended') {
         throw new UnauthorizedException('Pesantren Anda telah dinonaktifkan');
       }

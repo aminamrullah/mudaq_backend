@@ -49,6 +49,7 @@ export class AuthService {
             addon_wa_gateway: true,
             addon_landing_page: true,
             addon_inventaris: true,
+            deleted_at: true,
           } as any,
         },
         koperasi_outlet: {
@@ -62,6 +63,9 @@ export class AuthService {
 
     if (!user) throw new UnauthorizedException('Akun tidak ditemukan');
     if (!user.is_active) throw new UnauthorizedException('Akun dinonaktifkan');
+    if (user.pesantren && user.pesantren.deleted_at) {
+      throw new UnauthorizedException('Pesantren Anda telah dihapus');
+    }
 
     if (user.role === 'WALI_SANTRI') {
       throw new UnauthorizedException('Silakan login melalui aplikasi mobile Walisantri menggunakan OTP');
@@ -295,6 +299,7 @@ Berlaku selama 5 menit. Jangan berikan kode ini kepada siapapun.`,
             addon_landing_page: true,
             addon_inventaris: true,
             logo: true,
+            deleted_at: true,
           } as any,
         },
         koperasi_outlet: {
@@ -308,6 +313,9 @@ Berlaku selama 5 menit. Jangan berikan kode ini kepada siapapun.`,
 
     if (!user) throw new UnauthorizedException('Akun tidak ditemukan');
     if (!user.is_active) throw new UnauthorizedException('Akun dinonaktifkan');
+    if (user.pesantren && user.pesantren.deleted_at) {
+      throw new UnauthorizedException('Pesantren Anda telah dihapus');
+    }
 
     // For teachers, check if active
     if (user.role === 'USTAD') {
@@ -456,11 +464,25 @@ Berlaku selama 5 menit. Jangan berikan kode ini kepada siapapun.`,
   async refreshToken(refreshToken: string) {
     const stored = await this.prisma.refreshToken.findUnique({
       where: { token: refreshToken },
-      include: { user: true },
+      include: { 
+        user: {
+          include: {
+            pesantren: { select: { deleted_at: true } }
+          }
+        }
+      },
     });
 
     if (!stored || stored.expires_at < new Date()) {
       throw new UnauthorizedException('Refresh token tidak valid');
+    }
+
+    if (!stored.user.is_active) {
+      throw new UnauthorizedException('Akun dinonaktifkan');
+    }
+    
+    if ((stored.user as any).pesantren?.deleted_at) {
+      throw new UnauthorizedException('Pesantren Anda telah dihapus');
     }
 
     // Delete old token
@@ -683,6 +705,7 @@ Berlaku selama 10 menit. Masukkan kode ini di halaman reset password aplikasi MU
             addon_landing_page: true,
             addon_inventaris: true,
             logo: true,
+            deleted_at: true,
           } as any,
         },
         koperasi_outlet: {
@@ -697,6 +720,9 @@ Berlaku selama 10 menit. Masukkan kode ini di halaman reset password aplikasi MU
     if (user) {
       if (!user.is_active) {
         throw new UnauthorizedException('Akun dinonaktifkan');
+      }
+      if (user.pesantren && user.pesantren.deleted_at) {
+        throw new UnauthorizedException('Pesantren Anda telah dihapus');
       }
 
       if (user.phone) {

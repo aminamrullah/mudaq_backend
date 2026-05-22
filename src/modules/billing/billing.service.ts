@@ -53,6 +53,37 @@ export class BillingService {
 
     // 1. Payment Gateway Logic
     if (dto.payment_method === 'payment_gateway') {
+      const xenditKey = this.config.get<string>('XENDIT_SECRET_KEY') || '';
+      const isDemo = xenditKey.startsWith('xnd_development_');
+
+      if (isDemo) {
+        this.logger.log(`[DEMO MODE] Auto-paying bulk bills for tenant ${tenantUuid}`);
+        return await this.prisma.$transaction(async (tx) => {
+          for (const bill of bills) {
+            const remaining = Number(bill.amount) - Number(bill.amount_paid);
+            await tx.bill.update({
+              where: { id: bill.id },
+              data: { amount_paid: bill.amount, status: 'paid' },
+            });
+
+            await tx.transaction.create({
+              data: {
+                tenant_uuid: tenantUuid,
+                reference_no: `PAY-DEMO-${bill.id}-${uuidv4().slice(0, 8)}`,
+                student_id: bill.student_id,
+                bill_id: bill.id,
+                fee_category_id: bill.fee_category_id,
+                amount_paid: new Prisma.Decimal(remaining),
+                payment_method: 'payment_gateway',
+                payment_channel: dto.payment_channel || 'Xendit Demo',
+                status: 'success',
+              },
+            });
+          }
+          return { paid_bills_count: bills.length, total_paid: totalAmount, status: 'PAID', demo_mode: true };
+        });
+      }
+
       const externalId = `PAY-BULK-${firstBill.student_id}-${Date.now()}`;
       const pesantren = await this.prisma.pesantren.findUnique({
         where: { id: tenantUuid },
@@ -66,7 +97,6 @@ export class BillingService {
         },
       });
 
-      const xenditKey = this.config.get<string>('XENDIT_SECRET_KEY');
       let paymentData: any;
       let surcharge = 0;
       let platformFeeAmount = 0;
@@ -410,6 +440,35 @@ export class BillingService {
     const newStatus = newPaid >= Number(bill.amount) ? 'paid' : 'partial';
 
     if (dto.payment_method === 'payment_gateway') {
+      const xenditKey = this.config.get<string>('XENDIT_SECRET_KEY') || '';
+      const isDemo = xenditKey.startsWith('xnd_development_');
+
+      if (isDemo) {
+        this.logger.log(`[DEMO MODE] Auto-paying bill ${bill.id} for tenant ${tenantUuid}`);
+        return await this.prisma.$transaction(async (tx) => {
+          const updatedBill = await tx.bill.update({
+            where: { id: bill.id },
+            data: { amount_paid: new Prisma.Decimal(newPaid), status: newStatus },
+          });
+
+          const transaction = await tx.transaction.create({
+            data: {
+              tenant_uuid: tenantUuid,
+              reference_no: `PAY-DEMO-${bill.id}-${uuidv4().slice(0, 8)}`,
+              student_id: bill.student_id,
+              bill_id: bill.id,
+              fee_category_id: bill.fee_category_id,
+              amount_paid: new Prisma.Decimal(dto.amount),
+              payment_method: 'payment_gateway',
+              payment_channel: dto.payment_channel || 'Xendit Demo',
+              status: 'success',
+            },
+          });
+
+          return { bill: updatedBill, transaction, status: 'PAID', demo_mode: true };
+        });
+      }
+
       const externalId = `PAY-${bill.id}-${uuidv4().slice(0, 8)}`;
       const pesantren = await this.prisma.pesantren.findUnique({
         where: { id: tenantUuid },
@@ -419,7 +478,6 @@ export class BillingService {
         where: { id: bill.student_id },
       });
 
-      const xenditKey = this.config.get<string>('XENDIT_SECRET_KEY');
       let paymentData: any;
       let surcharge = 0;
       let platformFeeAmount = 0;
@@ -622,6 +680,27 @@ export class BillingService {
     const refNo = `DON-${Date.now()}-${uuidv4().slice(0, 8)}`;
 
     if (dto.payment_method === 'payment_gateway') {
+      const xenditKey = this.config.get<string>('XENDIT_SECRET_KEY') || '';
+      const isDemo = xenditKey.startsWith('xnd_development_');
+
+      if (isDemo) {
+        this.logger.log(`[DEMO MODE] Auto-paying donation for tenant ${tenantUuid}`);
+        const transaction = await this.prisma.transaction.create({
+          data: {
+            tenant_uuid: tenantUuid,
+            reference_no: `DON-DEMO-${Date.now()}-${uuidv4().slice(0, 8)}`,
+            student_id: dto.student_id,
+            fee_category_id: category.id,
+            amount_paid: new Prisma.Decimal(dto.amount),
+            payment_method: 'payment_gateway',
+            payment_channel: dto.payment_channel || 'Xendit Demo',
+            status: 'success',
+          },
+        });
+
+        return { transaction, status: 'PAID', demo_mode: true };
+      }
+
       const externalId = `DON-${dto.student_id}-${category.id}-${uuidv4().slice(0, 8)}`;
       const pesantren = await this.prisma.pesantren.findUnique({
         where: { id: tenantUuid },
@@ -632,7 +711,6 @@ export class BillingService {
       });
       if (!student) throw new BadRequestException('Santri tidak valid atau tidak ditemukan');
 
-      const xenditKey = this.config.get<string>('XENDIT_SECRET_KEY');
       let paymentData: any;
       let surcharge = 0;
       let platformFeeAmount = 0;

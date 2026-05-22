@@ -159,8 +159,13 @@ export class WhatsappService implements OnModuleInit {
         auth: state,
         printQRInTerminal: false,
         connectTimeoutMs: 60000,
+        defaultQueryTimeoutMs: 60000,
         keepAliveIntervalMs: 30000,
         retryRequestDelayMs: 5000,
+        syncFullHistory: false,
+        markOnlineOnConnect: false,
+        generateHighQualityLinkPreview: false,
+        browser: ['MUDAQ Gateway', 'Chrome', '10.0'],
         // Windows fixes
         patchMessageBeforeSending: (message) => {
           const requiresPatch = !!(
