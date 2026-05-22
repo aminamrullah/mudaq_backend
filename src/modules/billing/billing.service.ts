@@ -126,6 +126,9 @@ export class BillingService {
           const finalTotal = totalAmount + surcharge;
           const feeConfig = platformFeeAmount > 0 ? { fees: [{ type: 'PLATFORM_FEE', value: platformFeeAmount }] } : {};
 
+          const successUrl = this.config.get<string>('XENDIT_SUCCESS_URL');
+          const failureUrl = this.config.get<string>('XENDIT_FAILURE_URL');
+
           const resp = await fetch(`${baseUrl}/v2/invoices`, {
             method: 'POST',
             headers,
@@ -136,6 +139,8 @@ export class BillingService {
               invoice_duration: 3600,
               currency: 'IDR',
               payment_methods: dto.payment_channel === 'QRIS' ? ['QRIS'] : undefined,
+              success_redirect_url: successUrl,
+              failure_redirect_url: failureUrl,
               ...feeConfig,
             }),
           });
@@ -548,6 +553,9 @@ export class BillingService {
             if (!resp.ok) throw new BadRequestException(`Xendit VA Error: ${data.message || 'Error'}`);
             paymentData = { type: 'VA', id: data.id, bank_code: data.bank_code, account_number: data.account_number, amount: totalAmount, external_id: externalId };
           } else {
+            const successUrl = this.config.get<string>('XENDIT_SUCCESS_URL');
+            const failureUrl = this.config.get<string>('XENDIT_FAILURE_URL');
+
             const resp = await fetch(`${baseUrl}/v2/invoices`, {
               method: 'POST',
               headers,
@@ -560,6 +568,8 @@ export class BillingService {
                 payment_methods: dto.payment_channel === 'VA' ? ['BCA', 'BNI', 'BRI', 'MANDIRI', 'PERMATA'] : 
                                  dto.payment_channel === 'QRIS' ? ['QRIS'] : 
                                  dto.payment_channel ? [dto.payment_channel] : undefined,
+                success_redirect_url: successUrl,
+                failure_redirect_url: failureUrl,
                 ...feeConfig,
               }),
             });
@@ -781,6 +791,9 @@ export class BillingService {
             if (!resp.ok) throw new BadRequestException(`Xendit VA Error: ${data.message || 'Error'}`);
             paymentData = { type: 'VA', id: data.id, bank_code: data.bank_code, account_number: data.account_number, amount: totalAmount, external_id: externalId };
           } else {
+            const successUrl = this.config.get<string>('XENDIT_SUCCESS_URL');
+            const failureUrl = this.config.get<string>('XENDIT_FAILURE_URL');
+
             const resp = await fetch(`${baseUrl}/v2/invoices`, {
               method: 'POST',
               headers,
@@ -793,6 +806,8 @@ export class BillingService {
                 payment_methods: dto.payment_channel === 'VA' ? ['BCA', 'BNI', 'BRI', 'MANDIRI', 'PERMATA'] : 
                                  dto.payment_channel === 'QRIS' ? ['QRIS'] : 
                                  dto.payment_channel ? [dto.payment_channel] : undefined,
+                success_redirect_url: successUrl,
+                failure_redirect_url: failureUrl,
                 ...feeConfig,
               }),
             });

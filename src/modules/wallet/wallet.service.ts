@@ -338,6 +338,9 @@ export class WalletService {
           };
         } else {
           // General VA, QRIS, and everything else use Invoice for consistency
+          const successUrl = this.config.get<string>('XENDIT_SUCCESS_URL');
+          const failureUrl = this.config.get<string>('XENDIT_FAILURE_URL');
+
           const resp = await fetch(`${baseUrl}/v2/invoices`, {
             method: 'POST',
             headers,
@@ -350,6 +353,8 @@ export class WalletService {
               payment_methods: dto.payment_channel === 'VA' ? ['BCA', 'BNI', 'BRI', 'MANDIRI', 'PERMATA'] : 
                                dto.payment_channel === 'QRIS' ? ['QRIS'] : 
                                dto.payment_channel ? [dto.payment_channel] : undefined,
+              success_redirect_url: successUrl,
+              failure_redirect_url: failureUrl,
               ...feeConfig,
             }),
           });
