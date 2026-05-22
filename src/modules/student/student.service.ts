@@ -128,6 +128,7 @@ export class StudentService {
     status?: string,
     classroom_id?: string,
     dormitory_id?: string,
+    dormitory_room_id?: string,
     tahfidz_teacher_id?: string,
     quran_teacher_id?: string,
     kitab_teacher_id?: string,
