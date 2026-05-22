@@ -154,10 +154,17 @@ export class AuthService {
     const normalizedPhone = normalizePhone(cleanPhone);
     const legacyPhone = normalizedPhone.startsWith('628') ? '0' + normalizedPhone.slice(2) : cleanPhone;
 
+    let user = await this.prisma.user.findFirst({
+      where: {
+        phone: { in: [normalizedPhone, legacyPhone, cleanPhone, dto.phone].filter(Boolean) as string[] },
+        deleted_at: null
+      },
+    });
+
     // [MODIFIED] Find tenant_uuid to route WhatsApp message
-    let tenantUuid = dto.tenant_uuid;
+    let tenantUuid = dto.tenant_uuid || user?.tenant_uuid;
     
-    // Fallback: search student by phone to auto-detect tenant
+    // Fallback: search student by phone to auto-detect tenant if user doesn't have one
     if (!tenantUuid) {
       const student = await this.prisma.student.findFirst({
         where: { 
@@ -173,18 +180,31 @@ export class AuthService {
     // Verify phone isolation
     await this.validatePhoneIsolation(normalizedPhone, tenantUuid);
 
-    let user = await this.prisma.user.findFirst({
-      where: {
-        phone: { in: [normalizedPhone, legacyPhone, cleanPhone, dto.phone].filter(Boolean) as string[] },
-        deleted_at: null
-      },
-    });
+
 
     if (user && user.tenant_uuid && tenantUuid && user.tenant_uuid !== tenantUuid) {
       throw new ConflictException(`Nomor WhatsApp ${normalizedPhone} sudah terdaftar di pesantren lain.`);
     }
 
     if (!user) {
+      // Free up unique constraint if there's a deleted user with this phone
+      const deletedUser = await this.prisma.user.findFirst({
+        where: {
+          phone: { in: [normalizedPhone, legacyPhone, cleanPhone, dto.phone].filter(Boolean) as string[] },
+          deleted_at: { not: null }
+        }
+      });
+
+      if (deletedUser) {
+        await this.prisma.user.update({
+          where: { id: deletedUser.id },
+          data: {
+            phone: deletedUser.phone ? `${deletedUser.phone}_del_${Date.now()}` : null,
+            email: deletedUser.email ? `${deletedUser.email}_del_${Date.now()}` : null,
+          }
+        });
+      }
+
       // Auto-registration for Walisantri
       const hashedPassword = await bcrypt.hash(normalizedPhone, 12);
       user = await this.prisma.user.create({
@@ -255,7 +275,10 @@ Berlaku selama 5 menit. Jangan berikan kode ini kepada siapapun.`,
     await this.prisma.otp.delete({ where: { id: otpRecord.id } });
 
     const user = (await this.prisma.user.findFirst({
-      where: { phone: { in: [normalizedPhone, legacyPhone, cleanPhone, dto.phone] } },
+      where: { 
+        phone: { in: [normalizedPhone, legacyPhone, cleanPhone, dto.phone].filter(Boolean) as string[] },
+        deleted_at: null
+      },
       include: {
         pesantren: {
           select: {
@@ -284,6 +307,7 @@ Berlaku selama 5 menit. Jangan berikan kode ini kepada siapapun.`,
     })) as any;
 
     if (!user) throw new UnauthorizedException('Akun tidak ditemukan');
+    if (!user.is_active) throw new UnauthorizedException('Akun dinonaktifkan');
 
     // For teachers, check if active
     if (user.role === 'USTAD') {
@@ -375,10 +399,32 @@ Berlaku selama 5 menit. Jangan berikan kode ini kepada siapapun.`,
           { email: dto.email },
           ...(dto.phone ? [{ phone: dto.phone }] : []),
         ],
+        deleted_at: null,
       },
     });
     if (existing)
       throw new ConflictException('Email atau nomor telepon sudah terdaftar');
+
+    // Free up unique constraints if there's a deleted user
+    const deletedUser = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: dto.email },
+          ...(dto.phone ? [{ phone: dto.phone }] : []),
+        ],
+        deleted_at: { not: null },
+      },
+    });
+    
+    if (deletedUser) {
+      await this.prisma.user.update({
+        where: { id: deletedUser.id },
+        data: {
+          phone: deletedUser.phone ? `${deletedUser.phone}_del_${Date.now()}` : null,
+          email: deletedUser.email ? `${deletedUser.email}_del_${Date.now()}` : null,
+        }
+      });
+    }
 
     const hashedPassword = await bcrypt.hash(dto.password, 12);
 
@@ -776,27 +822,67 @@ Berlaku selama 10 menit. Masukkan kode ini di halaman reset password aplikasi MU
     // Delete OTP after successful verification
     await this.prisma.otp.delete({ where: { id: otpRecord.id } });
 
-    // Look up if there are any students with this phone number to auto-detect tenant
-    const student = await this.prisma.student.findFirst({
-      where: {
-        parent_phone: { in: [normalizedPhone, legacyPhone, cleanPhone, phone].filter(Boolean) as string[] },
-        deleted_at: null,
-      },
-    });
-    const detectedTenantUuid = student ? student.tenant_uuid : null;
-
-    // Check phone isolation
-    await this.validatePhoneIsolation(normalizedPhone, detectedTenantUuid);
-
     // Find user by email
     let userByEmail = await this.prisma.user.findFirst({
       where: { email, deleted_at: null },
     });
 
+    if (!userByEmail) {
+      // Free up deleted user email
+      const deletedUserEmail = await this.prisma.user.findFirst({
+        where: { email, deleted_at: { not: null } }
+      });
+      if (deletedUserEmail) {
+        await this.prisma.user.update({
+          where: { id: deletedUserEmail.id },
+          data: {
+            phone: deletedUserEmail.phone ? `${deletedUserEmail.phone}_del_${Date.now()}` : null,
+            email: `${deletedUserEmail.email}_del_${Date.now()}`,
+          }
+        });
+      }
+    }
+
     // Find user by phone
     let userByPhone = await this.prisma.user.findFirst({
-      where: { phone: normalizedPhone, deleted_at: null },
+      where: { 
+        phone: { in: [normalizedPhone, legacyPhone, cleanPhone, phone].filter(Boolean) as string[] },
+        deleted_at: null 
+      },
     });
+
+    if (!userByPhone) {
+      // Free up deleted user phone
+      const deletedUserPhone = await this.prisma.user.findFirst({
+        where: {
+          phone: { in: [normalizedPhone, legacyPhone, cleanPhone, phone].filter(Boolean) as string[] },
+          deleted_at: { not: null }
+        }
+      });
+      if (deletedUserPhone) {
+        await this.prisma.user.update({
+          where: { id: deletedUserPhone.id },
+          data: {
+            phone: deletedUserPhone.phone ? `${deletedUserPhone.phone}_del_${Date.now()}` : null,
+            email: deletedUserPhone.email ? `${deletedUserPhone.email}_del_${Date.now()}` : null,
+          }
+        });
+      }
+    }
+
+    let detectedTenantUuid = userByEmail?.tenant_uuid || userByPhone?.tenant_uuid;
+    if (!detectedTenantUuid) {
+      const student = await this.prisma.student.findFirst({
+        where: {
+          parent_phone: { in: [normalizedPhone, legacyPhone, cleanPhone, phone].filter(Boolean) as string[] },
+          deleted_at: null,
+        },
+      });
+      detectedTenantUuid = student ? student.tenant_uuid : null;
+    }
+
+    // Check phone isolation
+    await this.validatePhoneIsolation(normalizedPhone, detectedTenantUuid);
 
     let targetUser: any = null;
 

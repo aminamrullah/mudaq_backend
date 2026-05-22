@@ -82,6 +82,9 @@ export class StudentController {
   @ApiQuery({ name: 'tahfidz_teacher_id', required: false })
   @ApiQuery({ name: 'quran_teacher_id', required: false })
   @ApiQuery({ name: 'kitab_teacher_id', required: false })
+  @ApiQuery({ name: 'entry_year', required: false })
+  @ApiQuery({ name: 'sort', required: false })
+  @ApiQuery({ name: 'order', required: false })
   findAll(
     @CurrentUser('tenant_uuid') t: string,
     @Query('page') p?: number,
@@ -94,8 +97,11 @@ export class StudentController {
     @Query('tahfidz_teacher_id') ttid?: string,
     @Query('quran_teacher_id') qtid?: string,
     @Query('kitab_teacher_id') ktid?: string,
+    @Query('entry_year') ey?: string,
+    @Query('sort') sort?: string,
+    @Query('order') order?: string,
   ) {
-    return this.studentService.findAll(t, p, l, s, st, cid, did, drid, ttid, qtid, ktid);
+    return this.studentService.findAll(t, p, l, s, st, cid, did, drid, ttid, qtid, ktid, ey, sort, order);
   }
 
   @Get(':id')

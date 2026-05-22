@@ -128,10 +128,12 @@ export class StudentService {
     status?: string,
     classroom_id?: string,
     dormitory_id?: string,
-    dormitory_room_id?: string,
     tahfidz_teacher_id?: string,
     quran_teacher_id?: string,
     kitab_teacher_id?: string,
+    entry_year?: string,
+    sort?: string,
+    order?: string,
   ) {
     const sanitizeUuid = (val: any) => {
       if (val === 'undefined' || val === 'null' || val === '') return undefined;
@@ -166,6 +168,17 @@ export class StudentService {
     if (tahfidz_teacher_id) where.tahfidz_teacher_id = tahfidz_teacher_id;
     if (quran_teacher_id) where.quran_teacher_id = quran_teacher_id;
     if (kitab_teacher_id) where.kitab_teacher_id = kitab_teacher_id;
+    if (entry_year) where.entry_year = parseInt(entry_year);
+
+    const orderByClause: any = {};
+    if (sort) {
+      if (sort === 'name') orderByClause.name = order || 'asc';
+      else if (sort === 'entry_year') orderByClause.entry_year = order || 'desc';
+      else if (sort === 'classroom') orderByClause.classroom = { name: order || 'asc' };
+      else orderByClause[sort] = order || 'desc';
+    } else {
+      orderByClause.created_at = 'desc';
+    }
 
     const [data, total, total_all, tenantInfo] = await Promise.all([
       this.prisma.student.findMany({
@@ -179,7 +192,7 @@ export class StudentService {
           wallet: { select: { id: true, balance: true } },
           ppdb_wave: { select: { id: true, name: true } },
         },
-        orderBy: { created_at: 'desc' },
+        orderBy: orderByClause,
       }),
       this.prisma.student.count({ where }),
       this.prisma.student.count({ where: { tenant_uuid: tenantUuid, deleted_at: null } }),
