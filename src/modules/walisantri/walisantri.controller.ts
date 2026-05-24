@@ -7,6 +7,7 @@ import {
   Query,
   UseGuards,
   Put,
+  Res,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
@@ -154,6 +155,30 @@ export class WalisantriController {
     @Query('status') status?: string,
   ) {
     return this.svc.getBills(t, phone, studentId, status);
+  }
+
+  @Get('students/:studentId/transactions')
+  @Roles(Role.WALI_SANTRI)
+  @ApiOperation({ summary: 'Get student transactions' })
+  getTransactions(
+    @CurrentUser('tenant_uuid') t: string,
+    @CurrentUser('phone') phone: string,
+    @Param('studentId') studentId: string,
+  ) {
+    return this.svc.getTransactions(t, phone, studentId);
+  }
+
+  @Get('transactions/:id/receipt')
+  @Roles(Role.WALI_SANTRI)
+  @ApiOperation({ summary: 'Get transaction receipt HTML' })
+  async getReceiptHtml(
+    @CurrentUser('tenant_uuid') t: string,
+    @Param('id') id: string,
+    @Res() res: any,
+  ) {
+    const html = await this.svc.getTransactionReceiptHtml(t, id);
+    res.setHeader('Content-Type', 'text/html');
+    return res.send(html);
   }
 
   // ── Report Cards ──

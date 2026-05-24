@@ -26,4 +26,15 @@ export class GlobalConfigController {
   update(@Body() configs: Record<string, string>) {
     return this.svc.updateBulk(configs);
   }
+
+  @Get('public')
+  @ApiOperation({ summary: 'Get public global configurations' })
+  async getPublic() {
+    const configs = await this.svc.getAll();
+    return {
+      topup_bank_name: configs.topup_bank_name,
+      topup_bank_account: configs.topup_bank_account,
+      topup_bank_owner: configs.topup_bank_owner,
+    };
+  }
 }

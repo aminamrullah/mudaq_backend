@@ -8,6 +8,7 @@ import {
   Param,
   Query,
   UseGuards,
+  Res,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
@@ -181,5 +182,31 @@ export class BillingController {
     @Body() dto: { bill_ids: string[] },
   ) {
     return this.svc.notifyBills(t, dto.bill_ids);
+  }
+
+  @Get('bills/:id/receipt')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN, Role.WALI_SANTRI)
+  @ApiOperation({ summary: 'Print bill receipt' })
+  async getBillReceiptHtml(
+    @CurrentUser('tenant_uuid') t: string,
+    @Param('id') id: string,
+    @Res() res: any,
+  ) {
+    const html = await this.svc.getBillReceiptHtml(t, id);
+    res.setHeader('Content-Type', 'text/html');
+    return res.send(html);
+  }
+
+  @Get('transactions/:id/receipt')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN, Role.WALI_SANTRI)
+  @ApiOperation({ summary: 'Print transaction receipt' })
+  async getReceiptHtml(
+    @CurrentUser('tenant_uuid') t: string,
+    @Param('id') id: string,
+    @Res() res: any,
+  ) {
+    const html = await this.svc.getTransactionReceiptHtml(t, id);
+    res.setHeader('Content-Type', 'text/html');
+    return res.send(html);
   }
 }

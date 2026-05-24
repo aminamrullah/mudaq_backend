@@ -1,5 +1,5 @@
 import { IsNotEmpty, IsOptional, IsString, IsDateString, IsUUID } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateTeacherAttendanceDto {
   @ApiProperty()
@@ -42,4 +42,26 @@ export class BulkTeacherAttendanceDto {
   @ApiProperty({ type: [CreateTeacherAttendanceDto] })
   @IsNotEmpty()
   data: CreateTeacherAttendanceDto[];
+}
+
+export class TeacherCheckInDto {
+  @ApiProperty()
+  @IsUUID()
+  @IsNotEmpty()
+  schedule_id: string;
+
+  @ApiProperty()
+  @IsDateString()
+  @IsNotEmpty()
+  date: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  timestamp: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  image_base64?: string;
 }

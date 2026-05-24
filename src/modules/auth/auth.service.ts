@@ -92,6 +92,7 @@ export class AuthService {
 
     let isHomeroom = false;
     let homeroomClasses: string[] = [];
+    let homeroomClassIds: string[] = [];
     let isTahfidzTeacher = false;
     let canManageQuran = false;
     let canManageKitab = false;
@@ -102,6 +103,7 @@ export class AuthService {
       });
       isHomeroom = (teacherProfile?.classrooms?.length || 0) > 0;
       homeroomClasses = teacherProfile?.classrooms?.map((c) => c.name) || [];
+      homeroomClassIds = teacherProfile?.classrooms?.map((c) => c.id) || [];
       isTahfidzTeacher = teacherProfile?.is_tahfidz_teacher || false;
       canManageQuran = teacherProfile?.can_manage_quran || false;
       canManageKitab = teacherProfile?.can_manage_kitab || false;
@@ -131,6 +133,7 @@ export class AuthService {
         role: user.role,
         tenant_uuid: user.tenant_uuid,
         pesantren_name: user.pesantren?.name,
+        pesantren_logo: user.pesantren?.logo,
         pesantren_slug: user.pesantren?.slug,
         max_students: user.pesantren?.max_students || 0,
         calendar_type: user.pesantren?.calendar_type || 'gregorian',
@@ -143,6 +146,7 @@ export class AuthService {
         expired_at: user.pesantren?.expired_at,
         is_homeroom: isHomeroom,
         homeroom_classes: homeroomClasses,
+        homeroom_class_ids: homeroomClassIds,
         is_tahfidz_teacher: isTahfidzTeacher,
         can_manage_quran: canManageQuran,
         can_manage_kitab: canManageKitab,
@@ -335,6 +339,7 @@ Berlaku selama 5 menit. Jangan berikan kode ini kepada siapapun.`,
 
     let isHomeroom = false;
     let homeroomClasses: string[] = [];
+    let homeroomClassIds: string[] = [];
     let isTahfidzTeacher = false;
     let canManageQuran = false;
     let canManageKitab = false;
@@ -345,6 +350,7 @@ Berlaku selama 5 menit. Jangan berikan kode ini kepada siapapun.`,
       });
       isHomeroom = (teacherProfile?.classrooms?.length || 0) > 0;
       homeroomClasses = teacherProfile?.classrooms?.map((c) => c.name) || [];
+      homeroomClassIds = teacherProfile?.classrooms?.map((c) => c.id) || [];
       isTahfidzTeacher = teacherProfile?.is_tahfidz_teacher || false;
       canManageQuran = teacherProfile?.can_manage_quran || false;
       canManageKitab = teacherProfile?.can_manage_kitab || false;
@@ -387,6 +393,7 @@ Berlaku selama 5 menit. Jangan berikan kode ini kepada siapapun.`,
         expired_at: user.pesantren?.expired_at,
         is_homeroom: isHomeroom,
         homeroom_classes: homeroomClasses,
+        homeroom_class_ids: homeroomClassIds,
         is_tahfidz_teacher: isTahfidzTeacher,
         can_manage_quran: canManageQuran,
         can_manage_kitab: canManageKitab,
@@ -734,6 +741,7 @@ Berlaku selama 10 menit. Masukkan kode ini di halaman reset password aplikasi MU
 
         let isHomeroom = false;
         let homeroomClasses: string[] = [];
+        let homeroomClassIds: string[] = [];
         let isTahfidzTeacher = false;
         let canManageQuran = false;
         let canManageKitab = false;
@@ -744,6 +752,7 @@ Berlaku selama 10 menit. Masukkan kode ini di halaman reset password aplikasi MU
           });
           isHomeroom = (teacherProfile?.classrooms?.length || 0) > 0;
           homeroomClasses = teacherProfile?.classrooms?.map((c) => c.name) || [];
+          homeroomClassIds = teacherProfile?.classrooms?.map((c) => c.id) || [];
           isTahfidzTeacher = teacherProfile?.is_tahfidz_teacher || false;
           canManageQuran = teacherProfile?.can_manage_quran || false;
           canManageKitab = teacherProfile?.can_manage_kitab || false;
@@ -773,6 +782,7 @@ Berlaku selama 10 menit. Masukkan kode ini di halaman reset password aplikasi MU
             role: user.role,
             tenant_uuid: user.tenant_uuid,
             pesantren_name: user.pesantren?.name,
+            pesantren_logo: user.pesantren?.logo,
             pesantren_slug: user.pesantren?.slug,
             max_students: user.pesantren?.max_students || 0,
             calendar_type: user.pesantren?.calendar_type || 'gregorian',
@@ -786,6 +796,7 @@ Berlaku selama 10 menit. Masukkan kode ini di halaman reset password aplikasi MU
             expired_at: user.pesantren?.expired_at,
             is_homeroom: isHomeroom,
             homeroom_classes: homeroomClasses,
+            homeroom_class_ids: homeroomClassIds,
             is_tahfidz_teacher: isTahfidzTeacher,
             can_manage_quran: canManageQuran,
             can_manage_kitab: canManageKitab,

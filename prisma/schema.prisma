@@ -53,6 +53,9 @@ model Pesantren {
   addon_koperasi        Boolean  @default(false)
   addon_wa_gateway      Boolean  @default(false)
   addon_landing_page    Boolean  @default(false)
+  min_tenant_wallet_balance Decimal @default(0) @db.Decimal(12, 2)
+  storage_limit           BigInt    @default(1073741824) // 1GB
+  storage_used            BigInt    @default(0)
   addon_inventaris      Boolean  @default(false)
   
   is_active   Boolean  @default(true)
@@ -77,6 +80,8 @@ model Pesantren {
   wallet_transactions WalletTransaction[]
   tenant_wallet      TenantWallet?
   tenant_wallet_txs  TenantWalletTransaction[]
+  tenant_topup_requests TenantTopupRequest[]
+  tenant_withdrawal_requests TenantWithdrawalRequest[]
   topup_logs         TopupLog[]
   attendances        Attendance[]
   tahfidz_records    TahfidzRecord[]
@@ -508,6 +513,7 @@ model Teacher {
   is_tahfidz_teacher Boolean @default(false)
   can_manage_quran   Boolean @default(false)
   can_manage_kitab   Boolean @default(false)
+  face_descriptor    Json?
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
   deleted_at  DateTime?
@@ -1739,3 +1745,37 @@ model InventoryMutation {
   @@map("inventory_mutations")
 }
 
+
+model TenantWithdrawalRequest {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenant_uuid  String   @db.Uuid
+  amount       Decimal  @db.Decimal(12, 2)
+  bank_name    String
+  account_no   String
+  account_name String
+  status       String   @default("pending") // pending, approved, rejected
+  notes        String?
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+
+  @@index([tenant_uuid])
+  @@map("tenant_withdrawal_requests")
+}
+
+model TenantTopupRequest {
+  id           String    @id @default(uuid()) @db.Uuid
+  tenant_uuid  String    @db.Uuid
+  amount       Decimal   @db.Decimal(12, 2)
+  proof_url    String?
+  status       String    @default("pending") // pending, approved, rejected
+  notes        String?
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
+
+  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+
+  @@index([tenant_uuid])
+  @@map("tenant_topup_requests")
+}

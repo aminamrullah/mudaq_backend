@@ -72,41 +72,14 @@ export class AttendanceService {
         ),
       );
 
-      // 2. Automatically mark teacher as 'hadir' if schedule_id is provided
-      if (dto.schedule_id) {
-        const schedule = await tx.schedule.findUnique({
-          where: { id: dto.schedule_id },
-          select: { teacher_id: true },
-        });
+      // 2. Automatically mark teacher as 'hadir' is removed as it is now done manually via face validation.
 
-        if (schedule && schedule.teacher_id) {
-          const status = dto.teacher_status || 'hadir';
-          await tx.teacherAttendance.upsert({
-            where: {
-              teacher_id_schedule_id_date: {
-                teacher_id: schedule.teacher_id,
-                schedule_id: dto.schedule_id,
-                date: new Date(dto.date),
-              },
-            },
-            update: { status, check_in: new Date() },
-            create: {
-              tenant_uuid: tenantUuid,
-              teacher_id: schedule.teacher_id,
-              schedule_id: dto.schedule_id,
-              date: new Date(dto.date),
-              status,
-              check_in: new Date(),
-            },
-          });
-        }
-      }
 
       return studentAtt;
     });
 
     this.logger.log(
-      `Bulk attendance: ${results.length} records for tenant ${tenantUuid}. Teacher also marked present.`,
+      `Bulk attendance: ${results.length} records for tenant ${tenantUuid}.`,
     );
     return { count: results.length };
   }

@@ -10,6 +10,8 @@ import { TopupDto, TransferDto, UpdatePinDto } from './dto/wallet.dto';
 import { v4 as uuidv4 } from 'uuid';
 import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import { MailService } from '../mail/mail.service';
+import PDFDocument = require('pdfkit');
 
 @Injectable()
 export class WalletService {
@@ -17,6 +19,7 @@ export class WalletService {
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
+    private mailService: MailService,
   ) {}
 
   async getWallets(tenantUuid: string, parentPhone?: string) {
@@ -111,7 +114,7 @@ export class WalletService {
   async createManualTopup(tenantUuid: string, dto: TopupDto) {
     const pesantren = await this.prisma.pesantren.findUnique({
       where: { id: tenantUuid },
-      select: { manual_topup_fee: true },
+      select: { manual_topup_fee: true, min_tenant_wallet_balance: true },
     });
 
     const wallet = await this.prisma.wallet.findFirst({
@@ -137,9 +140,10 @@ export class WalletService {
         });
       }
 
-      if (Number(tenantWallet.balance) < Number(amount)) {
+      const minBalance = Number(pesantren?.min_tenant_wallet_balance || 0);
+      if (Number(tenantWallet.balance) - Number(amount) < minBalance) {
         throw new BadRequestException(
-          'Saldo Induk Pesantren tidak mencukupi untuk top up ini. Silakan hubungi Administrator untuk restock Saldo Induk.'
+          'Saldo Induk Pesantren tidak mencukupi untuk top up ini (Terpotong Saldo Mengendap).'
         );
       }
 
@@ -641,8 +645,11 @@ export class WalletService {
     const amount = new Prisma.Decimal(dto.amount);
     return this.prisma.$transaction(async (tx) => {
       const wallet = await tx.tenantWallet.findUnique({ where: { tenant_uuid: tenantUuid } });
-      if (!wallet || Number(wallet.balance) < Number(amount)) {
-        throw new BadRequestException('Saldo Induk tidak mencukupi');
+      const pesantren = await tx.pesantren.findUnique({ where: { id: tenantUuid } });
+      const minBalance = Number(pesantren?.min_tenant_wallet_balance || 0);
+
+      if (!wallet || Number(wallet.balance) - Number(amount) < minBalance) {
+        throw new BadRequestException('Saldo Induk tidak mencukupi (termasuk minimal saldo mengendap)');
       }
       
       const balanceBefore = wallet.balance;
@@ -665,6 +672,501 @@ export class WalletService {
         },
       });
       return updated;
+    });
+  }
+
+  async createTenantTopupRequest(tenantUuid: string, amount: number, proof_url?: string) {
+    if (amount <= 0) throw new BadRequestException('Jumlah top up tidak valid');
+
+    const pesantren = await this.prisma.pesantren.findUnique({ where: { id: tenantUuid } });
+    if (!pesantren) throw new NotFoundException('Pesantren tidak ditemukan');
+
+    const request = await this.prisma.tenantTopupRequest.create({
+      data: {
+        tenant_uuid: tenantUuid,
+        amount,
+        proof_url,
+        status: 'pending',
+      },
+    });
+
+    return {
+      message: 'Permintaan top up berhasil dibuat, menunggu persetujuan Superadmin.',
+      request,
+    };
+  }
+
+  async getTenantMyTopupRequests(tenantUuid: string) {
+    return this.prisma.tenantTopupRequest.findMany({
+      where: { tenant_uuid: tenantUuid },
+      orderBy: { created_at: 'desc' },
+    });
+  }
+
+  async approveTenantTopupRequest(requestId: string, isApproved: boolean) {
+    return this.prisma.$transaction(async (tx) => {
+      const request = await tx.tenantTopupRequest.findUnique({
+        where: { id: requestId },
+      });
+
+      if (!request) throw new NotFoundException('Permintaan top up tidak ditemukan');
+      if (request.status !== 'pending') throw new BadRequestException('Permintaan ini sudah diproses');
+
+      if (!isApproved) {
+        return tx.tenantTopupRequest.update({
+          where: { id: requestId },
+          data: { status: 'rejected' },
+        });
+      }
+
+      // If approved, add balance and log transaction
+      const wallet = await tx.tenantWallet.findUnique({ where: { tenant_uuid: request.tenant_uuid } });
+      if (!wallet) throw new NotFoundException('Dompet induk pesantren tidak ditemukan');
+
+      const balanceBefore = wallet.balance;
+      const balanceAfter = Prisma.Decimal.add(balanceBefore, request.amount);
+
+      await tx.tenantWallet.update({
+        where: { id: wallet.id },
+        data: { balance: balanceAfter },
+      });
+
+      await tx.tenantWalletTransaction.create({
+        data: {
+          tenant_uuid: request.tenant_uuid,
+          type: 'deposit',
+          amount: request.amount,
+          balance_before: balanceBefore,
+          balance_after: balanceAfter,
+          description: 'Topup Saldo Induk disetujui',
+          reference: request.id,
+        },
+      });
+
+      return tx.tenantTopupRequest.update({
+        where: { id: requestId },
+        data: { status: 'approved' },
+      });
+    });
+  }
+
+  async getTenantTopupRequests(filters: { status?: string }) {
+    const where: any = {};
+    if (filters.status) where.status = filters.status;
+
+    return this.prisma.tenantTopupRequest.findMany({
+      where,
+      include: {
+        pesantren: { select: { name: true, domain: true } },
+      },
+      orderBy: { created_at: 'desc' },
+    });
+  }
+
+  async createTenantWithdrawalRequest(tenantUuid: string, dto: { amount: number; bank_name: string; account_no: string; account_name: string; notes?: string }) {
+    return this.prisma.$transaction(async (tx) => {
+      const pesantren = await tx.pesantren.findUnique({ where: { id: tenantUuid } });
+      
+      if (pesantren?.subscription_status !== 'active') {
+        throw new BadRequestException('Penarikan dana Saldo Induk hanya bisa dilakukan jika status pesantren AKTIF.');
+      }
+
+      const wallet = await tx.tenantWallet.findUnique({ where: { tenant_uuid: tenantUuid } });
+      const minBalance = Number(pesantren?.min_tenant_wallet_balance || 0);
+
+      if (!wallet || Number(wallet.balance) - Number(dto.amount) < minBalance) {
+        throw new BadRequestException(`Saldo Induk tidak mencukupi (termasuk minimal saldo mengendap Rp${minBalance})`);
+      }
+
+      const balanceBefore = wallet.balance;
+      const balanceAfter = Prisma.Decimal.sub(balanceBefore, dto.amount);
+
+      await tx.tenantWallet.update({
+        where: { id: wallet.id },
+        data: { balance: balanceAfter },
+      });
+
+      const request = await tx.tenantWithdrawalRequest.create({
+        data: {
+          tenant_uuid: tenantUuid,
+          amount: dto.amount,
+          bank_name: dto.bank_name,
+          account_no: dto.account_no,
+          account_name: dto.account_name,
+          notes: dto.notes,
+          status: 'pending',
+        },
+      });
+
+      await tx.tenantWalletTransaction.create({
+        data: {
+          tenant_uuid: tenantUuid,
+          type: 'withdraw_to_superadmin',
+          amount: dto.amount,
+          balance_before: balanceBefore,
+          balance_after: balanceAfter,
+          reference: request.id,
+          description: dto.notes || 'Penarikan Dana (Withdraw) Menunggu Persetujuan',
+        },
+      });
+
+      return { message: 'Permintaan penarikan berhasil dibuat dan saldo ditahan', request };
+    });
+  }
+
+  async approveTenantWithdrawalRequest(requestId: string, isApproved: boolean) {
+    const result = await this.prisma.$transaction(async (tx) => {
+      const request = await tx.tenantWithdrawalRequest.findUnique({ 
+        where: { id: requestId },
+        include: { pesantren: true }
+      });
+      if (!request) throw new NotFoundException('Request tidak ditemukan');
+      if (request.status !== 'pending') throw new BadRequestException('Request sudah diproses');
+
+      if (isApproved) {
+        await tx.tenantWithdrawalRequest.update({
+          where: { id: requestId },
+          data: { status: 'approved' },
+        });
+        // Funds are already deducted, so we just return success
+      } else {
+        await tx.tenantWithdrawalRequest.update({
+          where: { id: requestId },
+          data: { status: 'rejected' },
+        });
+
+        // Refund the tenant wallet
+        const wallet = await tx.tenantWallet.findUnique({ where: { tenant_uuid: request.tenant_uuid } });
+        if (wallet) {
+          const balanceBefore = wallet.balance;
+          const balanceAfter = Prisma.Decimal.add(balanceBefore, request.amount);
+          
+          await tx.tenantWallet.update({
+            where: { id: wallet.id },
+            data: { balance: balanceAfter },
+          });
+
+          await tx.tenantWalletTransaction.create({
+            data: {
+              tenant_uuid: request.tenant_uuid,
+              type: 'deposit_from_superadmin',
+              amount: request.amount,
+              balance_before: balanceBefore,
+              balance_after: balanceAfter,
+              reference: `REF-WD-${request.id.slice(0,8)}`,
+              description: `Pengembalian dana dari Request Penarikan Ditolak`,
+            },
+          });
+        }
+      }
+      return { request, message: isApproved ? 'Request disetujui' : 'Request ditolak (dana dikembalikan)' };
+    });
+
+    if (isApproved && result.request.pesantren?.email) {
+      try {
+        const amountFormatted = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(Number(result.request.amount));
+        const dateStr = new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });
+        const subject = `Invoice Pencairan Dana - ${result.request.pesantren.name}`;
+        const html = `
+          <div style="font-family: sans-serif; padding: 20px; color: #333;">
+            <h2>Invoice / Bukti Pencairan Dana</h2>
+            <p>Halo <strong>${result.request.pesantren.name}</strong>,</p>
+            <p>Permintaan pencairan dana (withdrawal) Anda telah <strong>disetujui</strong> dan diproses oleh Superadmin MUDAQ.</p>
+            <table style="width: 100%; max-width: 600px; border-collapse: collapse; margin: 20px 0;">
+              <tr>
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">ID Transaksi</td>
+                <td style="padding: 10px; border: 1px solid #ddd;">${result.request.id}</td>
+              </tr>
+              <tr>
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Tanggal</td>
+                <td style="padding: 10px; border: 1px solid #ddd;">${dateStr}</td>
+              </tr>
+              <tr>
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Bank Tujuan</td>
+                <td style="padding: 10px; border: 1px solid #ddd;">${result.request.bank_name}</td>
+              </tr>
+              <tr>
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">No. Rekening</td>
+                <td style="padding: 10px; border: 1px solid #ddd;">${result.request.account_no}</td>
+              </tr>
+              <tr>
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Atas Nama</td>
+                <td style="padding: 10px; border: 1px solid #ddd;">${result.request.account_name}</td>
+              </tr>
+              <tr>
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold; font-size: 16px;">Nominal Pencairan</td>
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold; font-size: 16px; color: #10b981;">${amountFormatted}</td>
+              </tr>
+            </table>
+            <p>Dana akan segera masuk ke rekening tujuan Anda sesuai dengan estimasi waktu dari pihak bank.</p>
+            <p>Terima kasih telah menggunakan layanan MUDAQ.</p>
+            <br/>
+            <p>Salam,</p>
+            <p><strong>Tim MUDAQ</strong></p>
+          </div>
+        `;
+        this.mailService.sendMail(result.request.pesantren.email, subject, html).catch(e => {
+          this.logger.error('Failed to send withdrawal invoice email', e);
+        });
+      } catch (e) {
+        this.logger.error('Failed to prepare withdrawal invoice email', e);
+      }
+    }
+
+    return { message: result.message };
+  }
+
+  async generateTopupInvoiceHtml(id: string): Promise<string> {
+    const req = await this.prisma.tenantTopupRequest.findUnique({ where: { id }, include: { pesantren: true } });
+    if (!req) throw new NotFoundException('Request tidak ditemukan');
+    if (req.status !== 'approved') throw new BadRequestException('Hanya request yang disetujui yang memiliki invoice');
+
+    const amount = Number(req.amount).toLocaleString('id-ID');
+    const date = new Date(req.created_at).toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+    const time = new Date(req.created_at).toLocaleTimeString('id-ID', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    return `
+      <!DOCTYPE html>
+      <html lang="id">
+      <head>
+          <meta charset="UTF-8">
+          <title>Invoice Top Up Saldo Induk - ${req.id}</title>
+          <style>
+              body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #333; line-height: 1.6; padding: 20px; background: #f9f9f9; }
+              .invoice-box { max-width: 800px; margin: auto; padding: 30px; border: 1px solid #eee; background: #fff; box-shadow: 0 0 10px rgba(0, 0, 0, 0.15); border-radius: 8px; }
+              .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #8b5cf6; padding-bottom: 20px; margin-bottom: 20px; }
+              .logo-container { display: flex; align-items: center; gap: 15px; }
+              .logo { width: 60px; height: 60px; object-fit: contain; }
+              .pesantren-info h2 { margin: 0; color: #4c1d95; font-size: 20px; }
+              .pesantren-info p { margin: 2px 0; font-size: 13px; color: #666; }
+              .invoice-info { text-align: right; }
+              .invoice-info h1 { margin: 0; font-size: 24px; color: #8b5cf6; text-transform: uppercase; letter-spacing: 2px; }
+              .details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px; background: #f8fafc; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0; }
+              .detail-item { display: flex; flex-direction: column; }
+              .detail-label { font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase; }
+              .detail-value { font-size: 15px; font-weight: 600; color: #1e293b; }
+              table { width: 100%; line-height: inherit; text-align: left; border-collapse: collapse; margin-top: 10px; }
+              table th { background: #f1f5f9; padding: 12px; border-bottom: 2px solid #cbd5e1; color: #334155; }
+              table td { padding: 12px; border-bottom: 1px solid #e2e8f0; }
+              .total-row { background: #f8fafc; font-weight: bold; font-size: 16px; }
+              .total-row td { border-top: 2px solid #cbd5e1; border-bottom: none; }
+              .footer { margin-top: 40px; text-align: center; font-size: 12px; color: #666; border-top: 1px dashed #cbd5e1; padding-top: 20px; }
+              .status-badge { display: inline-block; padding: 6px 12px; border-radius: 4px; font-weight: bold; text-transform: uppercase; font-size: 13px; background: #f3e8ff; color: #6b21a8; border: 1px solid #e9d5ff; }
+              @media print {
+                  body { background: none; padding: 0; }
+                  .invoice-box { box-shadow: none; border: none; padding: 10px; }
+                  .no-print { display: none; }
+              }
+          </style>
+      </head>
+      <body>
+          <div class="no-print" style="text-align: center; margin-bottom: 20px;">
+              <button onclick="window.print()" style="padding: 10px 20px; background: #8b5cf6; color: #fff; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">Cetak Invoice / Simpan PDF</button>
+          </div>
+          <div class="invoice-box">
+              <div class="header">
+                  <div class="logo-container">
+                      ${req.pesantren?.logo ? `<img src="${req.pesantren.logo}" class="logo" alt="Logo" />` : ''}
+                      <div class="pesantren-info">
+                          <h2>${req.pesantren?.name || 'Pesantren'}</h2>
+                          <p>${req.pesantren?.address || ''}</p>
+                          <p>${req.pesantren?.phone ? 'Telp: ' + req.pesantren.phone : ''}</p>
+                      </div>
+                  </div>
+                  <div class="invoice-info">
+                      <h1>Invoice</h1>
+                      <div style="font-weight: 600; margin-top: 5px;">ID: ${req.id.slice(0, 8).toUpperCase()}</div>
+                      <div class="status-badge" style="margin-top: 8px;">DISETUJUI</div>
+                  </div>
+              </div>
+
+              <div class="details-grid">
+                  <div class="detail-item">
+                      <span class="detail-label">Tanggal Top Up</span>
+                      <span class="detail-value">${date} ${time}</span>
+                  </div>
+                  <div class="detail-item">
+                      <span class="detail-label">Jenis Transaksi</span>
+                      <span class="detail-value">Top Up Saldo Induk Pesantren</span>
+                  </div>
+              </div>
+
+              <table>
+                  <thead>
+                      <tr>
+                          <th>Deskripsi Transaksi</th>
+                          <th style="text-align: right;">Jumlah</th>
+                      </tr>
+                  </thead>
+                  <tbody>
+                      <tr>
+                          <td>
+                              <div style="font-weight: 600; color: #1e293b;">Penambahan Saldo Induk</div>
+                          </td>
+                          <td style="text-align: right; vertical-align: top; font-weight: 500;">Rp ${amount}</td>
+                      </tr>
+                      <tr class="total-row">
+                          <td style="text-align: right;">Total Top Up</td>
+                          <td style="text-align: right; color: #8b5cf6;">Rp ${amount}</td>
+                      </tr>
+                  </tbody>
+              </table>
+
+              <div class="footer">
+                  <p>Ini adalah bukti sah transaksi Top Up Saldo Induk Pesantren yang diterbitkan oleh sistem MUDAQ.</p>
+                  <p>&copy; ${new Date().getFullYear()} MUDAQ Management System</p>
+              </div>
+          </div>
+      </body>
+      </html>
+    `;
+  }
+
+  async generateWithdrawInvoiceHtml(id: string): Promise<string> {
+    const req = await this.prisma.tenantWithdrawalRequest.findUnique({ where: { id }, include: { pesantren: true } });
+    if (!req) throw new NotFoundException('Request tidak ditemukan');
+    if (req.status !== 'approved') throw new BadRequestException('Hanya request yang disetujui yang memiliki bukti pencairan');
+
+    const amount = Number(req.amount).toLocaleString('id-ID');
+    const date = new Date(req.updated_at).toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+    const time = new Date(req.updated_at).toLocaleTimeString('id-ID', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    return `
+      <!DOCTYPE html>
+      <html lang="id">
+      <head>
+          <meta charset="UTF-8">
+          <title>Bukti Pencairan Dana - ${req.id}</title>
+          <style>
+              body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #333; line-height: 1.6; padding: 20px; background: #f9f9f9; }
+              .invoice-box { max-width: 800px; margin: auto; padding: 30px; border: 1px solid #eee; background: #fff; box-shadow: 0 0 10px rgba(0, 0, 0, 0.15); border-radius: 8px; }
+              .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #8b5cf6; padding-bottom: 20px; margin-bottom: 20px; }
+              .logo-container { display: flex; align-items: center; gap: 15px; }
+              .logo { width: 60px; height: 60px; object-fit: contain; }
+              .pesantren-info h2 { margin: 0; color: #4c1d95; font-size: 20px; }
+              .pesantren-info p { margin: 2px 0; font-size: 13px; color: #666; }
+              .invoice-info { text-align: right; }
+              .invoice-info h1 { margin: 0; font-size: 24px; color: #8b5cf6; text-transform: uppercase; letter-spacing: 2px; }
+              .details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px; background: #f8fafc; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0; }
+              .detail-item { display: flex; flex-direction: column; }
+              .detail-label { font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase; }
+              .detail-value { font-size: 15px; font-weight: 600; color: #1e293b; }
+              table { width: 100%; line-height: inherit; text-align: left; border-collapse: collapse; margin-top: 10px; }
+              table th { background: #f1f5f9; padding: 12px; border-bottom: 2px solid #cbd5e1; color: #334155; }
+              table td { padding: 12px; border-bottom: 1px solid #e2e8f0; }
+              .total-row { background: #f8fafc; font-weight: bold; font-size: 16px; }
+              .total-row td { border-top: 2px solid #cbd5e1; border-bottom: none; }
+              .footer { margin-top: 40px; text-align: center; font-size: 12px; color: #666; border-top: 1px dashed #cbd5e1; padding-top: 20px; }
+              .status-badge { display: inline-block; padding: 6px 12px; border-radius: 4px; font-weight: bold; text-transform: uppercase; font-size: 13px; background: #f3e8ff; color: #6b21a8; border: 1px solid #e9d5ff; }
+              @media print {
+                  body { background: none; padding: 0; }
+                  .invoice-box { box-shadow: none; border: none; padding: 10px; }
+                  .no-print { display: none; }
+              }
+          </style>
+      </head>
+      <body>
+          <div class="no-print" style="text-align: center; margin-bottom: 20px;">
+              <button onclick="window.print()" style="padding: 10px 20px; background: #8b5cf6; color: #fff; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">Cetak Bukti / Simpan PDF</button>
+          </div>
+          <div class="invoice-box">
+              <div class="header">
+                  <div class="logo-container">
+                      ${req.pesantren?.logo ? `<img src="${req.pesantren.logo}" class="logo" alt="Logo" />` : ''}
+                      <div class="pesantren-info">
+                          <h2>${req.pesantren?.name || 'Pesantren'}</h2>
+                          <p>${req.pesantren?.address || ''}</p>
+                          <p>${req.pesantren?.phone ? 'Telp: ' + req.pesantren.phone : ''}</p>
+                      </div>
+                  </div>
+                  <div class="invoice-info">
+                      <h1>Bukti Dana</h1>
+                      <div style="font-weight: 600; margin-top: 5px;">ID: ${req.id.slice(0, 8).toUpperCase()}</div>
+                      <div class="status-badge" style="margin-top: 8px;">CAIR</div>
+                  </div>
+              </div>
+
+              <div class="details-grid">
+                  <div class="detail-item">
+                      <span class="detail-label">Tanggal Pencairan</span>
+                      <span class="detail-value">${date} ${time}</span>
+                  </div>
+                  <div class="detail-item">
+                      <span class="detail-label">Jenis Transaksi</span>
+                      <span class="detail-value">Tarik Dana (Withdrawal)</span>
+                  </div>
+                  <div class="detail-item">
+                      <span class="detail-label">Bank Tujuan</span>
+                      <span class="detail-value">${req.bank_name}</span>
+                  </div>
+                  <div class="detail-item">
+                      <span class="detail-label">Rekening / Atas Nama</span>
+                      <span class="detail-value">${req.account_no} / ${req.account_name}</span>
+                  </div>
+              </div>
+
+              <table>
+                  <thead>
+                      <tr>
+                          <th>Deskripsi Transaksi</th>
+                          <th style="text-align: right;">Jumlah</th>
+                      </tr>
+                  </thead>
+                  <tbody>
+                      <tr>
+                          <td>
+                              <div style="font-weight: 600; color: #1e293b;">Pencairan Saldo Induk ke Rekening Bank</div>
+                          </td>
+                          <td style="text-align: right; vertical-align: top; font-weight: 500;">Rp ${amount}</td>
+                      </tr>
+                      <tr class="total-row">
+                          <td style="text-align: right;">Total Dicairkan</td>
+                          <td style="text-align: right; color: #8b5cf6;">Rp ${amount}</td>
+                      </tr>
+                  </tbody>
+              </table>
+
+              <div class="footer">
+                  <p>Ini adalah bukti sah transaksi Pencairan Saldo Induk Pesantren yang diterbitkan oleh sistem MUDAQ.</p>
+                  <p>&copy; ${new Date().getFullYear()} MUDAQ Management System</p>
+              </div>
+          </div>
+      </body>
+      </html>
+    `;
+  }
+  async getTenantWalletTransactions(tenantUuid: string) {
+    return this.prisma.tenantWalletTransaction.findMany({
+      where: { tenant_uuid: tenantUuid },
+      orderBy: { created_at: 'desc' },
+      take: 50,
+    });
+  }
+  async getTenantWithdrawalRequests(targetUuid?: string, status?: string) {
+    const where: any = {};
+    if (targetUuid) where.tenant_uuid = targetUuid;
+    if (status) where.status = status;
+
+    return this.prisma.tenantWithdrawalRequest.findMany({
+      where,
+      include: {
+        pesantren: { select: { name: true, domain: true } },
+      },
+      orderBy: { created_at: 'desc' },
     });
   }
 }

@@ -1123,7 +1123,14 @@ export class AcademicService {
       where,
       include: {
         subject: { select: { name: true } },
-        classroom: { select: { name: true } },
+        classroom: { 
+          select: { 
+            name: true,
+            _count: {
+              select: { students: { where: { deleted_at: null } } }
+            }
+          } 
+        },
         _count: { select: { grades: true } }
       },
       orderBy: { date: 'desc' },

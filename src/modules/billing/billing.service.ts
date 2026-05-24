@@ -48,7 +48,8 @@ export class BillingService {
 
     if (bills.length === 0) throw new BadRequestException('Tagihan tidak ditemukan atau sudah lunas');
 
-    const totalAmount = bills.reduce((acc, b) => acc + (Number(b.amount) - Number(b.amount_paid)), 0);
+    const fullRemaining = bills.reduce((acc, b) => acc + (Number(b.amount) - Number(b.amount_paid)), 0);
+    const totalAmount = dto.amount && dto.amount > 0 ? Math.min(dto.amount, fullRemaining) : fullRemaining;
     const firstBill = bills[0];
 
     // 1. Payment Gateway Logic
@@ -59,11 +60,17 @@ export class BillingService {
       if (isDemo) {
         this.logger.log(`[DEMO MODE] Auto-paying bulk bills for tenant ${tenantUuid}`);
         return await this.prisma.$transaction(async (tx) => {
+          let currentAlloc = totalAmount;
           for (const bill of bills) {
+            if (currentAlloc <= 0) break;
             const remaining = Number(bill.amount) - Number(bill.amount_paid);
+            const allocateToBill = Math.min(remaining, currentAlloc);
+            const newPaid = Number(bill.amount_paid) + allocateToBill;
+            const newStatus = newPaid >= Number(bill.amount) ? 'paid' : 'partial';
+
             await tx.bill.update({
               where: { id: bill.id },
-              data: { amount_paid: bill.amount, status: 'paid' },
+              data: { amount_paid: new Prisma.Decimal(newPaid), status: newStatus },
             });
 
             await tx.transaction.create({
@@ -73,12 +80,13 @@ export class BillingService {
                 student_id: bill.student_id,
                 bill_id: bill.id,
                 fee_category_id: bill.fee_category_id,
-                amount_paid: new Prisma.Decimal(remaining),
+                amount_paid: new Prisma.Decimal(allocateToBill),
                 payment_method: 'payment_gateway',
                 payment_channel: dto.payment_channel || 'Xendit Demo',
                 status: 'success',
               },
             });
+            currentAlloc -= allocateToBill;
           }
           return { paid_bills_count: bills.length, total_paid: totalAmount, status: 'PAID', demo_mode: true };
         });
@@ -156,8 +164,12 @@ export class BillingService {
       }
 
       // Create pending transactions for each bill
+      let currentAlloc = totalAmount;
       for (const bill of bills) {
+        if (currentAlloc <= 0) break;
         const remaining = Number(bill.amount) - Number(bill.amount_paid);
+        const allocateToBill = Math.min(remaining, currentAlloc);
+
         await this.prisma.transaction.create({
           data: {
             tenant_uuid: tenantUuid,
@@ -165,13 +177,14 @@ export class BillingService {
             student_id: bill.student_id,
             bill_id: bill.id,
             fee_category_id: bill.fee_category_id,
-            amount_paid: new Prisma.Decimal(remaining),
+            amount_paid: new Prisma.Decimal(allocateToBill),
             payment_method: 'payment_gateway',
             payment_channel: dto.payment_channel || 'Xendit',
             status: 'pending',
             xendit_invoice_id: paymentData.id,
           },
         });
+        currentAlloc -= allocateToBill;
       }
 
       return paymentData;
@@ -208,11 +221,17 @@ export class BillingService {
         });
       }
 
+      let currentAlloc = totalAmount;
       for (const bill of bills) {
+        if (currentAlloc <= 0) break;
         const remaining = Number(bill.amount) - Number(bill.amount_paid);
+        const allocateToBill = Math.min(remaining, currentAlloc);
+        const newPaid = Number(bill.amount_paid) + allocateToBill;
+        const newStatus = newPaid >= Number(bill.amount) ? 'paid' : 'partial';
+
         await tx.bill.update({
           where: { id: bill.id },
-          data: { amount_paid: bill.amount, status: 'paid' },
+          data: { amount_paid: new Prisma.Decimal(newPaid), status: newStatus },
         });
 
         await tx.transaction.create({
@@ -222,11 +241,12 @@ export class BillingService {
             student_id: bill.student_id,
             bill_id: bill.id,
             fee_category_id: bill.fee_category_id,
-            amount_paid: new Prisma.Decimal(remaining),
+            amount_paid: new Prisma.Decimal(allocateToBill),
             payment_method: dto.payment_method,
             status: 'success',
           },
         });
+        currentAlloc -= allocateToBill;
       }
 
       return { paid_bills_count: bills.length, total_paid: totalAmount };
@@ -1142,5 +1162,158 @@ export class BillingService {
     }
 
     return results;
+  }
+
+  async getBillReceiptHtml(tenantUuid: string, billId: string) {
+    const tx = await this.prisma.transaction.findFirst({
+      where: { bill_id: billId, tenant_uuid: tenantUuid, status: 'success' },
+      orderBy: { created_at: 'desc' }
+    });
+    if (!tx) throw new BadRequestException('Kwitansi tidak ditemukan atau belum lunas.');
+    return this.getTransactionReceiptHtml(tenantUuid, tx.id);
+  }
+
+  async getTransactionReceiptHtml(tenantUuid: string, id: string) {
+    const transaction = await this.prisma.transaction.findFirst({
+      where: { id, tenant_uuid: tenantUuid },
+      include: {
+        pesantren: true,
+        student: { include: { classroom: true } },
+        fee_category: true,
+        bill: true,
+      },
+    });
+
+    if (!transaction) throw new NotFoundException('Transaksi tidak ditemukan');
+
+    const amount = Number(transaction.amount_paid).toLocaleString('id-ID');
+    const date = new Date(transaction.payment_date).toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+    
+    const time = new Date(transaction.payment_date).toLocaleTimeString('id-ID', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    const paymentMethodLabel = 
+      transaction.payment_method === 'saldo_santri' ? 'Saldo Santri' :
+      transaction.payment_method === 'payment_gateway' ? `Payment Gateway (${transaction.payment_channel || 'Auto'})` :
+      transaction.payment_method === 'cash' ? 'Tunai' :
+      transaction.payment_method === 'transfer' ? 'Transfer Bank' : transaction.payment_method;
+
+    return `
+      <!DOCTYPE html>
+      <html lang="id">
+      <head>
+          <meta charset="UTF-8">
+          <title>Kwitansi Pembayaran - ${transaction.reference_no}</title>
+          <style>
+              body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #333; line-height: 1.6; padding: 20px; background: #f9f9f9; }
+              .invoice-box { max-width: 800px; margin: auto; padding: 30px; border: 1px solid #eee; background: #fff; box-shadow: 0 0 10px rgba(0, 0, 0, 0.15); border-radius: 8px; }
+              .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #10b981; padding-bottom: 20px; margin-bottom: 20px; }
+              .logo-container { display: flex; align-items: center; gap: 15px; }
+              .logo { width: 60px; height: 60px; object-fit: contain; }
+              .pesantren-info h2 { margin: 0; color: #064e3b; font-size: 20px; }
+              .pesantren-info p { margin: 2px 0; font-size: 13px; color: #666; }
+              .invoice-info { text-align: right; }
+              .invoice-info h1 { margin: 0; font-size: 24px; color: #10b981; text-transform: uppercase; letter-spacing: 2px; }
+              .details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px; background: #f8fafc; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0; }
+              .detail-item { display: flex; flex-direction: column; }
+              .detail-label { font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase; }
+              .detail-value { font-size: 15px; font-weight: 600; color: #1e293b; }
+              table { width: 100%; line-height: inherit; text-align: left; border-collapse: collapse; margin-top: 10px; }
+              table th { background: #f1f5f9; padding: 12px; border-bottom: 2px solid #cbd5e1; color: #334155; }
+              table td { padding: 12px; border-bottom: 1px solid #e2e8f0; }
+              .total-row { background: #f8fafc; font-weight: bold; font-size: 16px; }
+              .total-row td { border-top: 2px solid #cbd5e1; border-bottom: none; }
+              .footer { margin-top: 40px; text-align: center; font-size: 12px; color: #666; border-top: 1px dashed #cbd5e1; padding-top: 20px; }
+              .status-badge { display: inline-block; padding: 6px 12px; border-radius: 4px; font-weight: bold; text-transform: uppercase; font-size: 13px; background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+              @media print {
+                  body { background: none; padding: 0; }
+                  .invoice-box { box-shadow: none; border: none; padding: 10px; }
+                  .no-print { display: none; }
+              }
+          </style>
+      </head>
+      <body>
+          <div class="no-print" style="text-align: center; margin-bottom: 20px;">
+              <button onclick="window.print()" style="padding: 10px 20px; background: #10b981; color: #fff; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">Cetak Kwitansi / Simpan PDF</button>
+          </div>
+          <div class="invoice-box">
+              <div class="header">
+                  <div class="logo-container">
+                      ${transaction.pesantren.logo ? `<img src="${transaction.pesantren.logo}" class="logo" alt="Logo" />` : ''}
+                      <div class="pesantren-info">
+                          <h2>${transaction.pesantren.name}</h2>
+                          <p>${transaction.pesantren.address || ''}</p>
+                          <p>${transaction.pesantren.phone ? 'Telp: ' + transaction.pesantren.phone : ''}</p>
+                      </div>
+                  </div>
+                  <div class="invoice-info">
+                      <h1>Kwitansi</h1>
+                      <div style="font-weight: 600; margin-top: 5px;">No: ${transaction.reference_no}</div>
+                      <div class="status-badge" style="margin-top: 8px;">${transaction.status === 'success' ? 'BERHASIL' : transaction.status.toUpperCase()}</div>
+                  </div>
+              </div>
+
+              <div class="details-grid">
+                  <div class="detail-item">
+                      <span class="detail-label">Tanggal Pembayaran</span>
+                      <span class="detail-value">${date} ${time}</span>
+                  </div>
+                  <div class="detail-item">
+                      <span class="detail-label">Metode Pembayaran</span>
+                      <span class="detail-value">${paymentMethodLabel}</span>
+                  </div>
+                  <div class="detail-item">
+                      <span class="detail-label">Nama Santri</span>
+                      <span class="detail-value">${transaction.student.name}</span>
+                  </div>
+                  <div class="detail-item">
+                      <span class="detail-label">NIS / Kelas</span>
+                      <span class="detail-value">${transaction.student.nis || '-'} / ${transaction.student.classroom?.name || '-'}</span>
+                  </div>
+              </div>
+
+              <table>
+                  <thead>
+                      <tr>
+                          <th>Deskripsi Pembayaran</th>
+                          <th style="text-align: right;">Jumlah</th>
+                      </tr>
+                  </thead>
+                  <tbody>
+                      <tr>
+                          <td>
+                              <div style="font-weight: 600; color: #1e293b;">${transaction.fee_category?.name || 'Pembayaran Tagihan'}</div>
+                              ${transaction.bill?.period ? `<div style="font-size: 13px; color: #64748b; margin-top: 4px;">Periode: ${transaction.bill.period}</div>` : ''}
+                          </td>
+                          <td style="text-align: right; vertical-align: top; font-weight: 500;">Rp ${amount}</td>
+                      </tr>
+                      ${Number(transaction.surcharge_fee) > 0 ? `
+                      <tr>
+                          <td style="font-size: 13px; color: #64748b;">Biaya Layanan / Admin</td>
+                          <td style="text-align: right; font-size: 13px; color: #64748b;">Rp ${Number(transaction.surcharge_fee).toLocaleString('id-ID')}</td>
+                      </tr>
+                      ` : ''}
+                      <tr class="total-row">
+                          <td style="text-align: right;">Total Bayar</td>
+                          <td style="text-align: right; color: #10b981;">Rp ${(Number(transaction.amount_paid) + Number(transaction.surcharge_fee)).toLocaleString('id-ID')}</td>
+                      </tr>
+                  </tbody>
+              </table>
+
+              <div class="footer">
+                  Kwitansi ini adalah bukti pembayaran yang sah.<br>
+                  Terima kasih atas pembayaran yang telah dilakukan.<br>
+                  <em>Dicetak secara otomatis oleh sistem pada ${new Date().toLocaleString('id-ID')}</em>
+              </div>
+          </div>
+      </body>
+      </html>
+    `;
   }
 }

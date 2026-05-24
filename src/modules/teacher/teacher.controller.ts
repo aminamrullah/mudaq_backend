@@ -24,7 +24,7 @@ import { Role } from '@prisma/client';
 @UseGuards(AuthGuard('jwt'), RolesGuard, TenantGuard)
 @ApiBearerAuth()
 export class TeacherController {
-  constructor(private readonly svc: TeacherService) {}
+  constructor(private readonly svc: TeacherService) { }
 
   @Post()
   @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN)
@@ -52,6 +52,17 @@ export class TeacherController {
     @CurrentUser('id') userId: string,
   ) {
     return this.svc.getProfile(t, userId);
+  }
+
+  @Put('profile')
+  @ApiOperation({ summary: 'Update current teacher profile' })
+  async updateProfile(
+    @CurrentUser('tenant_uuid') t: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: UpdateTeacherDto,
+  ) {
+    const teacher = await this.svc.getProfile(t, userId);
+    return this.svc.update(t, teacher.id, dto);
   }
 
   @Get(':id')

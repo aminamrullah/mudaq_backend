@@ -76,6 +76,10 @@ export class TenantService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      if (tenantData.storage_limit !== undefined) {
+        (tenantData as any).storage_limit = BigInt(Math.round(Number(tenantData.storage_limit)));
+      }
+
       const tenant = await tx.pesantren.create({
         data: {
           ...tenantData,
@@ -520,6 +524,10 @@ export class TenantService {
       data.expired_at = expiredAt;
     }
 
+    if (data.storage_limit !== undefined) {
+      data.storage_limit = BigInt(Math.round(Number(data.storage_limit)));
+    }
+
     return this.prisma.pesantren.update({ where: { id }, data });
   }
 
@@ -558,19 +566,46 @@ export class TenantService {
   }
 
   async findTransactionsByTenant(tenantUuid: string, page = 1, limit = 20) {
-    const where = { tenant_uuid: tenantUuid, status: 'success' };
-    const [data, total] = await Promise.all([
-      this.prisma.topupLog.findMany({
-        where,
-        orderBy: { created_at: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-      this.prisma.topupLog.count({ where }),
-    ]);
+    const txs = await this.prisma.transaction.findMany({
+      where: { tenant_uuid: tenantUuid, status: 'success', payment_method: 'payment_gateway' },
+      orderBy: { payment_date: 'desc' }
+    });
+    
+    const topups = await this.prisma.topupLog.findMany({
+      where: { tenant_uuid: tenantUuid, status: 'success' },
+      orderBy: { created_at: 'desc' }
+    });
+
+    const combined = [
+      ...txs.map(t => ({
+        id: t.id,
+        external_id: t.reference_no,
+        amount: t.amount_paid,
+        platform_fee: t.platform_fee,
+        surcharge_fee: t.surcharge_fee,
+        xendit_fee: t.xendit_fee,
+        net_amount: t.net_amount,
+        created_at: t.payment_date,
+        type: 'TRANSACTION'
+      })),
+      ...topups.map(t => ({
+        id: t.id,
+        external_id: t.external_id,
+        amount: t.amount,
+        platform_fee: t.platform_fee,
+        surcharge_fee: t.surcharge_fee,
+        xendit_fee: t.xendit_fee,
+        net_amount: t.net_amount,
+        created_at: t.created_at,
+        type: 'TOPUP'
+      }))
+    ].sort((a, b) => b.created_at.getTime() - a.created_at.getTime());
+
+    const total = combined.length;
+    const paginated = combined.slice((page - 1) * limit, page * limit);
 
     return {
-      data,
+      data: paginated,
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   }

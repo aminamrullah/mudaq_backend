@@ -183,6 +183,11 @@ export class CreateTenantDto {
   @IsOptional()
   @IsString()
   expired_at?: string | Date;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsNumber()
+  storage_limit?: number;
 }
 
 export class UpdateTenantDto extends PartialType(CreateTenantDto) {

@@ -10,6 +10,9 @@ export class GlobalConfigService implements OnModuleInit {
     const defaults = [
       { key: 'default_trial_duration_days', value: '14' },
       { key: 'default_platform_fee', value: '2500' },
+      { key: 'topup_bank_name', value: 'Bank BSI' },
+      { key: 'topup_bank_account', value: '7123456789' },
+      { key: 'topup_bank_owner', value: 'A.N. PT MUDAQ TEKNOLOGI' },
     ];
 
     for (const item of defaults) {

@@ -9,7 +9,7 @@ export class DashboardService {
     private xenditService: XenditService,
   ) {}
 
-  async getStats(tenantUuid: string) {
+  async getStats(tenantUuid: string, startDate?: string, endDate?: string) {
     if (!tenantUuid) {
       return {
         students: { total: 0, active: 0 },
@@ -29,6 +29,26 @@ export class DashboardService {
     const day = String(now.getDate()).padStart(2, '0');
     const today = new Date(`${year}-${month}-${day}`);
 
+    const dateFilter: any = {};
+    if (startDate || endDate) {
+      dateFilter.created_at = {};
+      if (startDate) dateFilter.created_at.gte = new Date(`${startDate}T00:00:00.000Z`);
+      if (endDate) dateFilter.created_at.lte = new Date(`${endDate}T23:59:59.999Z`);
+    }
+
+    const txDateFilter: any = {};
+    if (startDate || endDate) {
+      txDateFilter.payment_date = {};
+      if (startDate) txDateFilter.payment_date.gte = new Date(`${startDate}T00:00:00.000Z`);
+      if (endDate) txDateFilter.payment_date.lte = new Date(`${endDate}T23:59:59.999Z`);
+    }
+    
+    const disbursementDateFilter: any = {};
+    if (startDate || endDate) {
+      disbursementDateFilter.disbursement_date = {};
+      if (startDate) disbursementDateFilter.disbursement_date.gte = new Date(`${startDate}T00:00:00.000Z`);
+      if (endDate) disbursementDateFilter.disbursement_date.lte = new Date(`${endDate}T23:59:59.999Z`);
+    }
 
     const [
       totalStudents,
@@ -44,6 +64,7 @@ export class DashboardService {
       recentTransactions,
       recentSaasInvoices,
       totalIncome,
+      totalDonationIncome,
       totalExpenditure,
       totalPayroll,
       totalDisbursement,
@@ -119,24 +140,38 @@ export class DashboardService {
       }),
       // Financial Aggregates
       this.prisma.transaction.aggregate({
-        where: { tenant_uuid: tenantUuid, status: 'success' },
+        where: { 
+          tenant_uuid: tenantUuid, 
+          status: 'success',
+          fee_category: { type: { not: 'donation' } },
+          ...txDateFilter
+        },
+        _sum: { amount_paid: true, net_amount: true },
+      }),
+      this.prisma.transaction.aggregate({
+        where: { 
+          tenant_uuid: tenantUuid, 
+          status: 'success',
+          fee_category: { type: 'donation' },
+          ...txDateFilter
+        },
         _sum: { amount_paid: true, net_amount: true },
       }),
       this.prisma.expenditure.aggregate({
-        where: { tenant_uuid: tenantUuid },
+        where: { tenant_uuid: tenantUuid, ...dateFilter },
         _sum: { amount: true },
       }),
       this.prisma.payroll.aggregate({
-        where: { tenant_uuid: tenantUuid, status: 'paid' },
+        where: { tenant_uuid: tenantUuid, status: 'paid', ...dateFilter },
         _sum: { total_amount: true },
       }),
       this.prisma.donationDisbursement.aggregate({
-        where: { tenant_uuid: tenantUuid, status: 'success' },
+        where: { tenant_uuid: tenantUuid, status: 'success', ...disbursementDateFilter },
         _sum: { amount: true },
       }),
       this.prisma.pesantren.findUnique({
         where: { id: tenantUuid },
-        select: { max_students: true, slug: true, ppdb_is_active: true, name: true, logo: true, description: true }
+        select: { max_students: true, slug: true, ppdb_is_active: true, name: true, logo: true, description: true, addon_koperasi: true, addon_inventaris: true, storage_limit: true, storage_used: true }
       }),
       this.prisma.studentPermission.count({
         where: { tenant_uuid: tenantUuid, status: 'pending' }
@@ -145,6 +180,36 @@ export class DashboardService {
         where: { tenant_uuid: tenantUuid }
       }),
     ]);
+
+    // Koperasi Aggregates
+    let koperasiOutletsData: any[] = [];
+    let koperasiTotalIncome = 0;
+
+    if (tenantInfo?.addon_koperasi) {
+      const outlets = await this.prisma.koperasiOutlet.findMany({
+        where: { tenant_uuid: tenantUuid, is_active: true },
+        select: { id: true, name: true }
+      });
+
+      for (const outlet of outlets) {
+        const income = await this.prisma.posOrder.aggregate({
+          where: { 
+            tenant_uuid: tenantUuid, 
+            outlet_id: outlet.id, 
+            status: 'completed',
+            ...dateFilter
+          },
+          _sum: { total: true }
+        });
+        const outletIncome = Number(income._sum.total || 0);
+        koperasiOutletsData.push({
+          id: outlet.id,
+          name: outlet.name,
+          income: outletIncome
+        });
+        koperasiTotalIncome += outletIncome;
+      }
+    }
 
     // Process attendance data
     const attendanceMap: Record<string, number> = {
@@ -166,9 +231,8 @@ export class DashboardService {
       teacherAttendanceMap[a.status] = (a as any)._count._all || 0;
     });
 
-    // Use net_amount if available (for new transactions), 
-    // for old ones where net_amount might be 0, fallback to amount_paid for consistency
     const incomeSum = Number(totalIncome._sum.net_amount || totalIncome._sum.amount_paid || 0);
+    const donationIncomeSum = Number(totalDonationIncome._sum.net_amount || totalDonationIncome._sum.amount_paid || 0);
     const expenseSum = Number(totalExpenditure._sum.amount || 0);
     const payrollSum = Number(totalPayroll._sum.total_amount || 0);
     const disbursementSum = Number(totalDisbursement._sum.amount || 0);
@@ -192,12 +256,24 @@ export class DashboardService {
       recent_saas_invoices: recentSaasInvoices,
       financial: {
         total_income: incomeSum,
-        total_expense: expenseSum + payrollSum + disbursementSum,
+        total_expense: expenseSum + payrollSum,
         breakdown: {
           expenditure: expenseSum,
           payroll: payrollSum,
-          disbursement: disbursementSum,
         },
+      },
+      donasi: {
+        total_received: donationIncomeSum,
+        total_disbursed: disbursementSum,
+        balance: donationIncomeSum - disbursementSum,
+      },
+      koperasi: {
+        is_active: tenantInfo?.addon_koperasi || false,
+        total_income: koperasiTotalIncome,
+        outlets: koperasiOutletsData,
+      },
+      inventaris: {
+        is_active: tenantInfo?.addon_inventaris || false,
       },
       pesantren_slug: tenantInfo?.slug,
       pesantren_name: tenantInfo?.name,
@@ -205,6 +281,10 @@ export class DashboardService {
       pesantren_description: tenantInfo?.description,
       ppdb_is_active: tenantInfo?.ppdb_is_active || false,
       tenant_wallet_balance: Number(tenantWallet?.balance || 0),
+      storage: {
+        limit: tenantInfo?.storage_limit || 5368709120,
+        used: tenantInfo?.storage_used || 0,
+      },
     };
   }
 
@@ -326,7 +406,7 @@ export class DashboardService {
 
     // 4. Get recent transactions related to payment gateway
     const recentTransactions = await this.prisma.transaction.findMany({
-      where: { payment_method: 'gateway' },
+      where: { payment_method: 'payment_gateway' },
       orderBy: { payment_date: 'desc' },
       take: 10,
       include: {
@@ -506,5 +586,199 @@ export class DashboardService {
         performance: performance > 0 ? performance : 100
       }
     };
+  }
+
+  async getTeacherAttendanceToday(tenantUuid: string) {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const today = new Date(`${year}-${month}-${day}`);
+
+    const attendanceRecords = await this.prisma.teacherAttendance.findMany({
+      where: {
+        tenant_uuid: tenantUuid,
+        date: today
+      },
+      include: {
+        teacher: {
+          select: {
+            id: true,
+            name: true,
+            photo: true
+          }
+        },
+        schedule: {
+          select: {
+            start_time: true
+          }
+        }
+      }
+    });
+
+    return attendanceRecords.map(record => {
+      let isLate = false;
+      let lateMinutes = 0;
+
+      if (record.check_in && record.schedule?.start_time) {
+        // start_time is usually "HH:mm"
+        const [startHour, startMinute] = record.schedule.start_time.split(':').map(Number);
+        
+        const checkInHour = record.check_in.getHours();
+        const checkInMinute = record.check_in.getMinutes();
+
+        const scheduleMinutes = startHour * 60 + startMinute;
+        const actualMinutes = checkInHour * 60 + checkInMinute;
+
+        if (actualMinutes > scheduleMinutes) {
+          isLate = true;
+          lateMinutes = actualMinutes - scheduleMinutes;
+        }
+      }
+
+      return {
+        id: record.id,
+        teacher_id: record.teacher.id,
+        teacher_name: record.teacher.name,
+        teacher_photo: record.teacher.photo,
+        status: record.status,
+        check_in: record.check_in,
+        check_out: record.check_out,
+        schedule_start: record.schedule?.start_time || null,
+        is_late: isLate,
+        late_minutes: lateMinutes,
+        notes: record.notes
+      };
+    });
+  }
+
+  async getTeacherPunctualityRanking(tenantUuid: string) {
+    // Fetch all teacher attendance records that have check_in and a schedule
+    const records = await this.prisma.teacherAttendance.findMany({
+      where: {
+        tenant_uuid: tenantUuid,
+        status: 'hadir',
+        check_in: { not: null },
+        schedule_id: { not: null },
+      },
+      include: {
+        teacher: {
+          select: { id: true, name: true, photo: true, nip: true },
+        },
+        schedule: {
+          select: { start_time: true },
+        },
+      },
+    });
+
+    // Aggregate per teacher
+    const teacherMap: Record<string, {
+      id: string;
+      name: string;
+      photo: string | null;
+      nip: string | null;
+      total_hadir: number;
+      on_time_count: number;
+      late_count: number;
+      total_late_minutes: number;
+    }> = {};
+
+    for (const record of records) {
+      const teacherId = record.teacher.id;
+      if (!teacherMap[teacherId]) {
+        teacherMap[teacherId] = {
+          id: record.teacher.id,
+          name: record.teacher.name,
+          photo: (record.teacher as any).photo || null,
+          nip: (record.teacher as any).nip || null,
+          total_hadir: 0,
+          on_time_count: 0,
+          late_count: 0,
+          total_late_minutes: 0,
+        };
+      }
+
+      const entry = teacherMap[teacherId];
+      entry.total_hadir++;
+
+      if (record.check_in && record.schedule?.start_time) {
+        const [startHour, startMinute] = record.schedule.start_time.split(':').map(Number);
+        const checkIn = new Date(record.check_in);
+        const checkInMinutes = checkIn.getHours() * 60 + checkIn.getMinutes();
+        const scheduleMinutes = startHour * 60 + startMinute;
+
+        if (checkInMinutes > scheduleMinutes) {
+          entry.late_count++;
+          entry.total_late_minutes += (checkInMinutes - scheduleMinutes);
+        } else {
+          entry.on_time_count++;
+        }
+      }
+    }
+
+    const teachers = Object.values(teacherMap).map(t => ({
+      ...t,
+      on_time_percentage: t.total_hadir > 0 ? Math.round((t.on_time_count / t.total_hadir) * 100) : 0,
+      avg_late_minutes: t.late_count > 0 ? Math.round(t.total_late_minutes / t.late_count) : 0,
+    }));
+
+    // Sort: most punctual first (highest on_time_percentage, then most total_hadir)
+    const mostPunctual = [...teachers]
+      .sort((a, b) => b.on_time_percentage - a.on_time_percentage || b.total_hadir - a.total_hadir)
+      .slice(0, 20);
+
+    // Sort: most frequently late first (highest late_count, then highest avg late)
+    const mostLate = [...teachers]
+      .filter(t => t.late_count > 0)
+      .sort((a, b) => b.late_count - a.late_count || b.avg_late_minutes - a.avg_late_minutes)
+      .slice(0, 20);
+
+    return {
+      most_punctual: mostPunctual,
+      most_late: mostLate,
+      total_teachers_tracked: teachers.length,
+    };
+  }
+
+  async getEmployeePerformance(tenantUuid: string) {
+    // Karyawan = users with roles STAFF_PESANTREN, FINANCE_PESANTREN, KEPALA_KOPERASI, STAF_KOPERASI
+    const employees = await this.prisma.user.findMany({
+      where: {
+        tenant_uuid: tenantUuid,
+        role: {
+          in: ['STAFF_PESANTREN', 'FINANCE_PESANTREN', 'KEPALA_KOPERASI', 'STAF_KOPERASI']
+        },
+        deleted_at: null
+      },
+      select: {
+        id: true,
+        name: true,
+        role: true,
+        last_login_at: true,
+        phone: true,
+        _count: {
+          select: {
+            activities: {
+              where: {
+                created_at: {
+                  gte: new Date(new Date().setHours(0, 0, 0, 0)) // Today's activities
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    return employees.map(emp => ({
+      id: emp.id,
+      name: emp.name,
+      role: emp.role,
+      phone: emp.phone,
+      last_login_at: emp.last_login_at,
+      today_activities_count: emp._count.activities,
+      // Status could be derived from today's activities or last login
+      status: emp._count.activities > 0 ? 'active_today' : (emp.last_login_at ? 'inactive_today' : 'never_logged_in')
+    }));
   }
 }
