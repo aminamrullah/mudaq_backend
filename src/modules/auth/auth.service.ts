@@ -791,7 +791,6 @@ Berlaku selama 10 menit. Masukkan kode ini di halaman reset password aplikasi MU
             addon_wa_gateway: user.pesantren?.addon_wa_gateway || false,
             addon_landing_page: user.pesantren?.addon_landing_page || false,
             addon_inventaris: user.pesantren?.addon_inventaris || false,
-            pesantren_logo: user.pesantren?.logo,
             subscription_status: user.pesantren?.subscription_status || 'trial',
             expired_at: user.pesantren?.expired_at,
             is_homeroom: isHomeroom,
