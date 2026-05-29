@@ -256,4 +256,12 @@ export class TeacherService {
       return { success: true };
     });
   }
+
+  async resetFace(tenantUuid: string, id: string) {
+    const teacher = await this.findOne(tenantUuid, id);
+    return this.prisma.teacher.update({
+      where: { id: teacher.id },
+      data: { face_descriptor: null },
+    });
+  }
 }

@@ -96,4 +96,14 @@ export class TeacherController {
   ) {
     return this.svc.assignStudents(t, id, dto);
   }
+
+  @Put(':id/reset-face')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN)
+  @ApiOperation({ summary: 'Reset teacher face registration' })
+  resetFace(
+    @CurrentUser('tenant_uuid') t: string,
+    @Param('id') id: string,
+  ) {
+    return this.svc.resetFace(t, id);
+  }
 }
