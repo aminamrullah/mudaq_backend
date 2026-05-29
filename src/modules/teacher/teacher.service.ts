@@ -261,7 +261,7 @@ export class TeacherService {
     const teacher = await this.findOne(tenantUuid, id);
     return this.prisma.teacher.update({
       where: { id: teacher.id },
-      data: { face_descriptor: null },
+      data: { face_descriptor: Prisma.DbNull },
     });
   }
 }
