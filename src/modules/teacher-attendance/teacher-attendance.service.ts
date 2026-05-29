@@ -174,8 +174,9 @@ export class TeacherAttendanceService {
     if (!schedule) throw new BadRequestException('Jadwal tidak ditemukan');
 
     const checkInTime = new Date(timestamp);
-    const checkInH = checkInTime.getHours();
-    const checkInM = checkInTime.getMinutes();
+    // Convert to WIB (UTC+7) for time comparisons
+    const checkInH = (checkInTime.getUTCHours() + 7) % 24;
+    const checkInM = checkInTime.getUTCMinutes();
     const checkInTotalMins = checkInH * 60 + checkInM;
 
     const [startH, startM] = schedule.start_time.split(':').map(Number);
@@ -183,13 +184,15 @@ export class TeacherAttendanceService {
     const startTotalMins = startH * 60 + startM;
     const endTotalMins = endH * 60 + endM;
 
-    if (checkInTotalMins < startTotalMins) {
-      throw new BadRequestException('Belum masuk jam pelajaran');
+    // Allow check-in up to 10 minutes early
+    if (checkInTotalMins < startTotalMins - 10) {
+      throw new BadRequestException('Belum masuk jam pelajaran (terlalu awal)');
     }
 
     let notes = '';
-    if (checkInTotalMins > endTotalMins) {
-      const diffMins = checkInTotalMins - endTotalMins;
+    // Check if late (checked in after start time)
+    if (checkInTotalMins > startTotalMins) {
+      const diffMins = checkInTotalMins - startTotalMins;
       const hours = Math.floor(diffMins / 60);
       const mins = diffMins % 60;
       if (hours > 0) {

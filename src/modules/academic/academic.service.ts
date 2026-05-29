@@ -33,7 +33,7 @@ import {
 
 @Injectable()
 export class AcademicService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   // ==========================================
   // Academic Years
@@ -287,7 +287,7 @@ export class AcademicService {
   // ==========================================
   async getSchedules(tenantId: string, role: string, userId: string, classroomId?: string, myOnly?: boolean) {
     const where: any = { tenant_uuid: tenantId };
-    
+
     if (role === 'USTAD' || myOnly) {
       // Find the teacher profile linked to this user
       const teacher = await this.prisma.teacher.findFirst({
@@ -327,17 +327,17 @@ export class AcademicService {
 
     return this.prisma.schedule.findMany({
       where,
-      include: { 
-        subject: true, 
-        teacher: true, 
+      include: {
+        subject: true,
+        teacher: true,
         classroom: {
           include: {
             _count: {
               select: { students: true }
             }
           }
-        }, 
-        kitab: true 
+        },
+        kitab: true
       },
     });
   }
@@ -375,7 +375,7 @@ export class AcademicService {
   // ==========================================
   async getQuestionBanks(tenantId: string, role?: string, userId?: string, subjectId?: string) {
     const where: any = { tenant_uuid: tenantId };
-    
+
     if (subjectId) {
       where.subject_id = subjectId;
     }
@@ -535,10 +535,10 @@ export class AcademicService {
         question_bank: where
       },
       include: {
-        question_bank: { 
-          include: { 
-            kitab: { select: { id: true, name: true } } 
-          } 
+        question_bank: {
+          include: {
+            kitab: { select: { id: true, name: true } }
+          }
         }
       }
     });
@@ -556,7 +556,7 @@ export class AcademicService {
         where: { user_id: userId, tenant_uuid: tenantId }
       });
       if (!teacher) return [];
-      
+
       // Teacher can see schedules where they are the author OR the supervisor
       where.OR = [
         { teacher_id: teacher.id },
@@ -623,7 +623,7 @@ export class AcademicService {
     const { question_ids, ...updateData } = dto;
     const data: any = { ...updateData };
     if (dto.date) data.date = new Date(dto.date);
-    
+
     return this.prisma.$transaction(async (tx) => {
       const schedule = await tx.examSchedule.update({
         where: { id, tenant_uuid: tenantId },
@@ -655,21 +655,21 @@ export class AcademicService {
   async getExamResults(tenantId: string, scheduleId: string) {
     return this.prisma.examResult.findMany({
       where: { tenant_uuid: tenantId, exam_schedule_id: scheduleId },
-      include: { 
-        student: { select: { id: true, name: true, nis: true } } 
+      include: {
+        student: { select: { id: true, name: true, nis: true } }
       }
     });
   }
 
   async saveExamResults(tenantId: string, scheduleId: string, userId: string, role: string, dto: SaveExamResultDto) {
     const where: any = { id: scheduleId, tenant_uuid: tenantId };
-    
+
     if (role === 'USTAD') {
       const teacher = await this.prisma.teacher.findFirst({
         where: { user_id: userId, tenant_uuid: tenantId }
       });
       if (!teacher) throw new NotFoundException('Teacher profile not found');
-      
+
       // Teacher can save results if they are the author OR the supervisor
       where.OR = [
         { teacher_id: teacher.id },
@@ -683,15 +683,15 @@ export class AcademicService {
     });
 
     if (!schedule) throw new NotFoundException('Jadwal ujian tidak ditemukan atau Anda tidak memiliki akses');
-    
+
     // Workflow checks:
     // 1. Must be approved
     if (schedule.status !== 'approved') {
-       throw new Error('Penilaian hanya bisa dilakukan jika soal sudah di-ACC oleh Admin');
+      throw new Error('Penilaian hanya bisa dilakukan jika soal sudah di-ACC oleh Admin');
     }
     // 2. Exam must not be finished
     if (schedule.exam.status === 'finished') {
-       throw new Error('Ujian sudah dinyatakan selesai oleh Admin, nilai tidak dapat diubah');
+      throw new Error('Ujian sudah dinyatakan selesai oleh Admin, nilai tidak dapat diubah');
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -721,7 +721,7 @@ export class AcademicService {
       where: { user_id: userId, tenant_uuid: tenantId }
     });
     if (!teacher) return [];
-    
+
     return this.prisma.classroom.findMany({
       where: { homeroom_teacher_id: teacher.id, tenant_uuid: tenantId },
       include: {
@@ -752,7 +752,7 @@ export class AcademicService {
         academic_year: true,
         period: true,
         details: {
-          include: { 
+          include: {
             subject: {
               include: { category: true }
             }
@@ -892,9 +892,9 @@ export class AcademicService {
       const attSick = studentAttendance.filter(r => r.status === 'sakit').length;
       const attIzin = studentAttendance.filter(r => r.status === 'izin').length;
       const attAlpa = studentAttendance.filter(r => r.status === 'alpa').length;
-      
+
       const subjectData: Record<string, { exams: number[], assignments: number[] }> = {};
-      
+
       studentExamResults.forEach(r => {
         const sid = r.exam_schedule.subject_id;
         if (!subjectData[sid]) subjectData[sid] = { exams: [], assignments: [] };
@@ -918,7 +918,7 @@ export class AcademicService {
       if (report) {
         report = await this.prisma.reportCard.update({
           where: { id: report.id },
-          data: { 
+          data: {
             classroom_id: classroomId,
             attendance_sick: attSick,
             attendance_izin: attIzin,
@@ -949,20 +949,20 @@ export class AcademicService {
 
       for (const subjectId of allSubjectIds) {
         const data = subjectData[subjectId] || { exams: [], assignments: [] };
-        
+
         // Calculate averages. 
         // If a subject has exams in the class but this student has 0 exams, avgExam = 0
         const hasExamsInClass = examResults.some(r => r.exam_schedule.subject_id === subjectId);
         const hasAssignmentsInClass = assignmentGrades.some(r => r.daily_assignment.subject_id === subjectId);
 
-        const avgExam = data.exams.length > 0 
-          ? (data.exams.reduce((a, b) => a + b, 0) / data.exams.length) 
+        const avgExam = data.exams.length > 0
+          ? (data.exams.reduce((a, b) => a + b, 0) / data.exams.length)
           : (hasExamsInClass ? 0 : null); // Penalty 0 if they missed it
-          
-        const avgAssign = data.assignments.length > 0 
-          ? (data.assignments.reduce((a, b) => a + b, 0) / data.assignments.length) 
+
+        const avgAssign = data.assignments.length > 0
+          ? (data.assignments.reduce((a, b) => a + b, 0) / data.assignments.length)
           : (hasAssignmentsInClass ? 0 : null); // Penalty 0 if they missed it
-        
+
         let finalScore = 0;
         if (avgExam !== null && avgAssign !== null) {
           // Both are expected: 60% Exam, 40% Assignment
@@ -994,11 +994,11 @@ export class AcademicService {
           }
         });
       }
-      
+
       const allDetails = await this.prisma.reportCardDetail.findMany({ where: { report_card_id: report.id } });
       const total = allDetails.reduce((a, b) => a + Number(b.score), 0);
       const avg = allDetails.length > 0 ? total / allDetails.length : 0;
-      
+
       await this.prisma.reportCard.update({
         where: { id: report.id },
         data: { total_score: total, average_score: avg }
@@ -1034,7 +1034,7 @@ export class AcademicService {
 
   async updateReportCard(tenantId: string, id: string, dto: UpdateReportCardDto) {
     const { details, ...updateData } = dto;
-    
+
     return this.prisma.$transaction(async (tx) => {
       const report = await tx.reportCard.update({
         where: { id, tenant_uuid: tenantId },
@@ -1060,11 +1060,11 @@ export class AcademicService {
             }
           });
         }
-        
+
         const allDetails = await tx.reportCardDetail.findMany({ where: { report_card_id: id } });
         const total = allDetails.reduce((a, b) => a + Number(b.score), 0);
         const avg = allDetails.length > 0 ? total / allDetails.length : 0;
-        
+
         await tx.reportCard.update({
           where: { id },
           data: { total_score: total, average_score: avg }
@@ -1110,7 +1110,7 @@ export class AcademicService {
   // ==========================================
   async getAssignments(tenantId: string, role: string, userId: string, classroomId?: string) {
     const where: any = { tenant_uuid: tenantId };
-    
+
     if (role === 'USTAD') {
       const teacher = await this.prisma.teacher.findFirst({
         where: { user_id: userId, tenant_uuid: tenantId },
@@ -1127,13 +1127,13 @@ export class AcademicService {
       where,
       include: {
         subject: { select: { name: true } },
-        classroom: { 
-          select: { 
+        classroom: {
+          select: {
             name: true,
             _count: {
               select: { students: { where: { deleted_at: null } } }
             }
-          } 
+          }
         },
         _count: { select: { grades: true } }
       },
@@ -1145,7 +1145,7 @@ export class AcademicService {
     const teacher = await this.prisma.teacher.findFirst({
       where: { user_id: userId, tenant_uuid: tenantId },
     });
-    
+
     if (!teacher) throw new NotFoundException('Profil guru tidak ditemukan');
 
     return this.prisma.$transaction(async (tx) => {
@@ -1196,7 +1196,7 @@ export class AcademicService {
 
   async updateAssignment(tenantId: string, userId: string, role: string, id: string, dto: UpdateAssignmentDto) {
     const where: any = { id, tenant_uuid: tenantId };
-    
+
     if (role === 'USTAD') {
       const teacher = await this.prisma.teacher.findFirst({
         where: { user_id: userId, tenant_uuid: tenantId }
@@ -1242,7 +1242,7 @@ export class AcademicService {
 
   async deleteAssignment(tenantId: string, userId: string, role: string, id: string) {
     const where: any = { id, tenant_uuid: tenantId };
-    
+
     if (role === 'USTAD') {
       const teacher = await this.prisma.teacher.findFirst({
         where: { user_id: userId, tenant_uuid: tenantId }
