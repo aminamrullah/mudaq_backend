@@ -348,8 +348,8 @@ export class AcademicService {
         tenant_uuid: tenantId,
         classroom_id: dto.classroom_id,
         subject_id: dto.subject_id,
-        teacher_id: dto.teacher_id,
-        kitab_id: dto.kitab_id || null,
+        teacher_id: dto.teacher_id === '' ? null : dto.teacher_id,
+        kitab_id: (dto.kitab_id === '' || !dto.kitab_id) ? null : dto.kitab_id,
         day_of_week: dto.day_of_week,
         start_time: dto.start_time,
         end_time: dto.end_time,
@@ -358,9 +358,13 @@ export class AcademicService {
   }
 
   async updateSchedule(tenantId: string, id: string, dto: UpdateScheduleDto) {
+    const data: any = { ...dto };
+    if (data.teacher_id === '') data.teacher_id = null;
+    if (data.kitab_id === '') data.kitab_id = null;
+
     return this.prisma.schedule.update({
       where: { id, tenant_uuid: tenantId },
-      data: dto,
+      data,
     });
   }
 

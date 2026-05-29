@@ -96,6 +96,7 @@ export class AuthService {
     let isTahfidzTeacher = false;
     let canManageQuran = false;
     let canManageKitab = false;
+    let hasRegisteredFace = false;
     if (user.role === 'USTAD') {
       const teacherProfile = await this.prisma.teacher.findFirst({
         where: { user_id: user.id },
@@ -107,6 +108,7 @@ export class AuthService {
       isTahfidzTeacher = teacherProfile?.is_tahfidz_teacher || false;
       canManageQuran = teacherProfile?.can_manage_quran || false;
       canManageKitab = teacherProfile?.can_manage_kitab || false;
+      hasRegisteredFace = !!teacherProfile?.face_descriptor;
     }
 
     const tokens = await this.generateTokens(user);
