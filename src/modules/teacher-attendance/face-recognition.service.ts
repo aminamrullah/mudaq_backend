@@ -44,7 +44,7 @@ export class FaceRecognitionService implements OnModuleInit {
       // Remove data URL prefix safely
       let base64Data = base64Str;
       if (base64Str.includes(',')) {
-        base64Data = base64Str.split(',')[1];
+        base64Data = base64Str.split(',').pop() || '';
       }
       const originalBuffer = Buffer.from(base64Data, 'base64');
 
