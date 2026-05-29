@@ -260,13 +260,15 @@ export class AcademicController {
   @Get('schedules')
   @ApiOperation({ summary: 'Get schedules' })
   @ApiQuery({ name: 'classroom_id', required: false })
+  @ApiQuery({ name: 'my_only', required: false })
   getSchedules(
     @CurrentUser('tenant_uuid') t: string,
     @CurrentUser('role') role: string,
     @CurrentUser('id') userId: string,
     @Query('classroom_id') classroomId?: string,
+    @Query('my_only') myOnly?: string,
   ) {
-    return this.academicService.getSchedules(t, role, userId, classroomId);
+    return this.academicService.getSchedules(t, role, userId, classroomId, myOnly === 'true');
   }
 
   @Post('schedules')

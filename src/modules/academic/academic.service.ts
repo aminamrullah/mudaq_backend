@@ -285,10 +285,10 @@ export class AcademicService {
   // ==========================================
   // Schedules
   // ==========================================
-  async getSchedules(tenantId: string, role: string, userId: string, classroomId?: string) {
+  async getSchedules(tenantId: string, role: string, userId: string, classroomId?: string, myOnly?: boolean) {
     const where: any = { tenant_uuid: tenantId };
     
-    if (role === 'USTAD') {
+    if (role === 'USTAD' || myOnly) {
       // Find the teacher profile linked to this user
       const teacher = await this.prisma.teacher.findFirst({
         where: { user_id: userId, tenant_uuid: tenantId },
@@ -297,15 +297,19 @@ export class AcademicService {
 
       if (!teacher) return [];
 
-      const homeroomClassIds = teacher.classrooms.map(c => c.id);
+      if (myOnly) {
+        where.teacher_id = teacher.id;
+      } else {
+        const homeroomClassIds = teacher.classrooms.map(c => c.id);
 
-      // Rule: 
-      // 1. If it's my own schedule
-      // 2. OR If I am the homeroom teacher for that class (show all schedules in that class)
-      where.OR = [
-        { teacher_id: teacher.id },
-        { classroom_id: { in: homeroomClassIds } }
-      ];
+        // Rule: 
+        // 1. If it's my own schedule
+        // 2. OR If I am the homeroom teacher for that class (show all schedules in that class)
+        where.OR = [
+          { teacher_id: teacher.id },
+          { classroom_id: { in: homeroomClassIds } }
+        ];
+      }
     }
 
     if (classroomId) {
