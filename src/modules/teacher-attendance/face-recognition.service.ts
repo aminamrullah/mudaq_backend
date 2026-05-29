@@ -2,6 +2,7 @@ import { Injectable, OnModuleInit, Logger, BadRequestException } from '@nestjs/c
 import * as faceapi from '@vladmandic/face-api';
 import { Canvas, Image, ImageData, loadImage } from 'canvas';
 import * as path from 'path';
+import * as sharp from 'sharp';
 
 // Patch Node.js environment for face-api
 const env = faceapi.env;
@@ -40,9 +41,15 @@ export class FaceRecognitionService implements OnModuleInit {
     }
 
     try {
-      // Remove data URL prefix if exists
-      const base64Data = base64Str.replace(/^data:image\/\w+;base64,/, '');
-      const buffer = Buffer.from(base64Data, 'base64');
+      // Remove data URL prefix safely
+      let base64Data = base64Str;
+      if (base64Str.includes(',')) {
+        base64Data = base64Str.split(',')[1];
+      }
+      const originalBuffer = Buffer.from(base64Data, 'base64');
+
+      // Convert to PNG using sharp to avoid "Unsupported image type" in canvas
+      const buffer = await sharp(originalBuffer).png().toBuffer();
 
       // Load image into canvas object that faceapi understands
       const img = await loadImage(buffer);
