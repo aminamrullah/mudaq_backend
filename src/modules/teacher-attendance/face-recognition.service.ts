@@ -2,7 +2,7 @@ import { Injectable, OnModuleInit, Logger, BadRequestException } from '@nestjs/c
 import * as faceapi from '@vladmandic/face-api';
 import { Canvas, Image, ImageData, loadImage } from 'canvas';
 import * as path from 'path';
-import * as sharp from 'sharp';
+import sharp from 'sharp';
 
 // Patch Node.js environment for face-api
 const env = faceapi.env;
