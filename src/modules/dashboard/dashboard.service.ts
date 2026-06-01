@@ -299,6 +299,8 @@ export class DashboardService {
       saasInvoiceSummary,
       recentTenants,
       usageTrend,
+      trialEndingTenants,
+      recentUnpaidInvoices,
     ] = await Promise.all([
       this.prisma.pesantren.count({ where: { deleted_at: null } }),
       this.prisma.pesantren.count({
@@ -317,6 +319,7 @@ export class DashboardService {
       }),
       this.prisma.saasInvoice.groupBy({
         by: ['status'],
+        where: { pesantren: { deleted_at: null } },
         _sum: { amount: true },
         _count: { _all: true },
       }),
@@ -334,6 +337,24 @@ export class DashboardService {
         orderBy: { date: 'desc' },
         take: 15,
         select: { date: true, student_count: true },
+      }),
+      this.prisma.pesantren.findMany({
+        where: { 
+          subscription_status: 'trial', 
+          expired_at: { not: null } 
+        },
+        orderBy: { expired_at: 'asc' },
+        take: 5,
+        select: { id: true, name: true, expired_at: true }
+      }),
+      this.prisma.saasInvoice.findMany({
+        where: { 
+          status: { in: ['unpaid', 'overdue', 'pending'] },
+          pesantren: { deleted_at: null }
+        },
+        orderBy: { created_at: 'desc' },
+        take: 5,
+        include: { pesantren: { select: { name: true } } }
       }),
     ]);
 
@@ -366,6 +387,8 @@ export class DashboardService {
       },
       recent_tenants: recentTenants,
       usage_trend: usageTrend.reverse(),
+      trial_ending_tenants: trialEndingTenants,
+      recent_unpaid_invoices: recentUnpaidInvoices,
     };
   }
 

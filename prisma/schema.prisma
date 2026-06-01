@@ -84,6 +84,7 @@ model Pesantren {
   tenant_withdrawal_requests TenantWithdrawalRequest[]
   topup_logs         TopupLog[]
   attendances        Attendance[]
+  shalat_attendances ShalatAttendance[]
   tahfidz_records    TahfidzRecord[]
   violations         Violation[]
   health_records     HealthRecord[]
@@ -477,6 +478,7 @@ model Student {
   bills            Bill[]
   transactions     Transaction[]
   attendances      Attendance[]
+  shalat_attendances ShalatAttendance[]
   tahfidz_records  TahfidzRecord[]
   violations       Violation[]
   health_records   HealthRecord[]
@@ -1778,4 +1780,26 @@ model TenantTopupRequest {
 
   @@index([tenant_uuid])
   @@map("tenant_topup_requests")
+}
+
+
+model ShalatAttendance {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_uuid String   @db.Uuid
+  student_id  String   @db.Uuid
+  shalat_name String   // subuh, dzuhur, ashar, maghrib, isya, dhuha, tahajjud
+  date        DateTime @db.Date
+  status      String   // jamaah, munfarid, izin, sakit, alpha, haid
+  notes       String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  pesantren Pesantren  @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  student   Student    @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  @@unique([student_id, shalat_name, date])
+  @@index([tenant_uuid])
+  @@index([student_id])
+  @@index([date])
+  @@map("shalat_attendances")
 }

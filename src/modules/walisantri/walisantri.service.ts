@@ -250,6 +250,30 @@ export class WalisantriService {
     return { records, summary };
   }
 
+  // ── Shalat Attendance ──
+  async getShalatAttendance(tenantUuid: string, phone: string, studentId: string, month?: string) {
+    const student = await this.verifyOwnership(tenantUuid, phone, studentId);
+    const where: any = { tenant_uuid: student.tenant_uuid, student_id: studentId };
+    if (month) {
+      const start = new Date(`${month}-01`);
+      const end = new Date(start);
+      end.setMonth(end.getMonth() + 1);
+      where.date = { gte: start, lt: end };
+    }
+    const records = await this.prisma.shalatAttendance.findMany({
+      where,
+      orderBy: { date: 'desc' },
+      take: 200,
+    });
+
+    const summary: Record<string, number> = { jamaah: 0, munfarid: 0, izin: 0, sakit: 0, alpha: 0, haid: 0, total: records.length };
+    records.forEach((r) => {
+      if (summary[r.status] !== undefined) summary[r.status]++;
+    });
+
+    return { records, summary };
+  }
+
   // ── Tahfidz ──
   async getTahfidz(tenantUuid: string, phone: string, studentId: string, category?: string) {
     const student = await this.verifyOwnership(tenantUuid, phone, studentId);

@@ -32,27 +32,23 @@ export class PrismaService
       const modelsWithSoftDelete = ['Pesantren', 'User', 'Student', 'Teacher'];
       
       if (params.model && modelsWithSoftDelete.includes(params.model)) {
+        if (!params.args) {
+          params.args = {};
+        }
+        if (!params.args.where) {
+          params.args.where = {};
+        }
+
         if (params.action === 'findUnique' || params.action === 'findFirst') {
-          // Change to findFirst - you cannot filter by anything except ID / unique with findUnique
           params.action = 'findFirst';
-          // Add 'deleted_at: null' filter
-          // We must be careful not to overwrite existing where clauses
-          if (params.args.where) {
-            if (params.args.where.deleted_at === undefined) {
-              params.args.where.deleted_at = null;
-            }
-          } else {
-            params.args.where = { deleted_at: null };
+          if (params.args.where.deleted_at === undefined) {
+            params.args.where.deleted_at = null;
           }
         }
         
         if (params.action === 'findMany' || params.action === 'count') {
-          if (params.args.where) {
-            if (params.args.where.deleted_at === undefined) {
-              params.args.where.deleted_at = null;
-            }
-          } else {
-            params.args.where = { deleted_at: null };
+          if (params.args.where.deleted_at === undefined) {
+            params.args.where.deleted_at = null;
           }
         }
       }

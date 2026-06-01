@@ -83,6 +83,18 @@ export class WalisantriController {
     return this.svc.getAttendance(t, phone, studentId, month);
   }
 
+  @Get('students/:studentId/shalat-attendance')
+  @Roles(Role.WALI_SANTRI)
+  @ApiOperation({ summary: 'Get student shalat attendance history' })
+  getShalatAttendance(
+    @CurrentUser('tenant_uuid') t: string,
+    @CurrentUser('phone') phone: string,
+    @Param('studentId') studentId: string,
+    @Query('month') month?: string,
+  ) {
+    return this.svc.getShalatAttendance(t, phone, studentId, month);
+  }
+
   // ── Tahfidz ──
   @Get('students/:studentId/tahfidz')
   @Roles(Role.WALI_SANTRI)

@@ -31,6 +31,7 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { PpdbModule } from './modules/ppdb/ppdb.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
+import { ShalatAttendanceModule } from './modules/shalat-attendance/shalat-attendance.module';
 
 @Module({
   imports: [
@@ -72,6 +73,7 @@ import { InventoryModule } from './modules/inventory/inventory.module';
     KoperasiModule,
     PpdbModule,
     InventoryModule,
+    ShalatAttendanceModule,
   ],
   providers: [
     {
