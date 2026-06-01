@@ -6,12 +6,14 @@ import makeWASocket, {
   useMultiFileAuthState, 
   ConnectionState,
   WASocket,
-  fetchLatestBaileysVersion
+  fetchLatestBaileysVersion,
+  Browsers
 } from '@whiskeysockets/baileys';
 import * as QRCode from 'qrcode';
 import { Boom } from '@hapi/boom';
 import * as path from 'path';
 import * as fs from 'fs';
+import pino from 'pino';
 
 @Injectable()
 export class WhatsappService implements OnModuleInit {
@@ -157,6 +159,7 @@ export class WhatsappService implements OnModuleInit {
       const sock = makeWASocket({
         version,
         auth: state,
+        logger: pino({ level: 'silent' }),
         printQRInTerminal: false,
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 60000,
@@ -165,7 +168,10 @@ export class WhatsappService implements OnModuleInit {
         syncFullHistory: false,
         markOnlineOnConnect: false,
         generateHighQualityLinkPreview: false,
-        browser: ['MUDAQ Gateway', 'Chrome', '10.0'],
+        browser: Browsers.macOS('Desktop'),
+        getMessage: async () => {
+          return { conversation: 'mudaq' };
+        },
         // Windows fixes
         patchMessageBeforeSending: (message) => {
           const requiresPatch = !!(
@@ -211,11 +217,17 @@ export class WhatsappService implements OnModuleInit {
           this.statuses.set(sessionId, 'DISCONNECTED');
           this.sessions.delete(sessionId);
           
-          if (shouldReconnect) {
-            setTimeout(() => this.initBaileys(tenantUuid), 10000);
-          } else if (statusCode === DisconnectReason.loggedOut) {
+          if (statusCode === DisconnectReason.loggedOut) {
             this.logger.log(`[WA-${sessionId}] Logged out detected, clearing session folder`);
             this.logoutBaileys(tenantUuid);
+          } else if (statusCode === DisconnectReason.restartRequired) {
+            this.logger.log(`[WA-${sessionId}] Restart required, reconnecting immediately`);
+            this.initBaileys(tenantUuid);
+          } else if (statusCode === 440) { // connectionReplaced
+            this.logger.log(`[WA-${sessionId}] Connection replaced (opened elsewhere), stopping reconnect`);
+            // Do not reconnect to avoid ping-pong loop
+          } else if (shouldReconnect) {
+            setTimeout(() => this.initBaileys(tenantUuid), 10000);
           }
         } else if (connection === 'open') {
           this.logger.log(`[WA-${sessionId}] Connected successfully`);

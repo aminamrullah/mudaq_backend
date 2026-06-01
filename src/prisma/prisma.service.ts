@@ -26,6 +26,38 @@ export class PrismaService
             { emit: 'event', level: 'warn' },
           ],
     });
+
+    // Global Soft Delete Middleware
+    this.$use(async (params, next) => {
+      const modelsWithSoftDelete = ['Pesantren', 'User', 'Student', 'Teacher'];
+      
+      if (params.model && modelsWithSoftDelete.includes(params.model)) {
+        if (params.action === 'findUnique' || params.action === 'findFirst') {
+          // Change to findFirst - you cannot filter by anything except ID / unique with findUnique
+          params.action = 'findFirst';
+          // Add 'deleted_at: null' filter
+          // We must be careful not to overwrite existing where clauses
+          if (params.args.where) {
+            if (params.args.where.deleted_at === undefined) {
+              params.args.where.deleted_at = null;
+            }
+          } else {
+            params.args.where = { deleted_at: null };
+          }
+        }
+        
+        if (params.action === 'findMany' || params.action === 'count') {
+          if (params.args.where) {
+            if (params.args.where.deleted_at === undefined) {
+              params.args.where.deleted_at = null;
+            }
+          } else {
+            params.args.where = { deleted_at: null };
+          }
+        }
+      }
+      return next(params);
+    });
   }
 
   async onModuleInit(): Promise<void> {

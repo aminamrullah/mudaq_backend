@@ -220,7 +220,6 @@ export class AuthService {
       user = await this.prisma.user.create({
         data: {
           name: `Walisantri`,
-          email: `${normalizedPhone}@walisantri.com`,
           phone: normalizedPhone,
           password: hashedPassword,
           role: 'WALI_SANTRI',
