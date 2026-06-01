@@ -131,6 +131,48 @@ export class ShalatAttendanceService {
     };
   }
 
+  async getOptions(tenant_uuid: string) {
+    const setting = await this.prisma.setting.findUnique({
+      where: {
+        tenant_uuid_key: {
+          tenant_uuid,
+          key: 'SHALAT_OPTIONS',
+        },
+      },
+    });
+
+    if (setting && setting.value) {
+      try {
+        return JSON.parse(setting.value);
+      } catch (e) {}
+    }
+    return ['Subuh', 'Dhuha', 'Dzuhur', 'Ashar', 'Maghrib', 'Isya', 'Tahajud'];
+  }
+
+  async updateOptions(tenant_uuid: string, options: string[]) {
+    await this.prisma.setting.upsert({
+      where: {
+        tenant_uuid_key: {
+          tenant_uuid,
+          key: 'SHALAT_OPTIONS',
+        },
+      },
+      update: {
+        value: JSON.stringify(options),
+      },
+      create: {
+        tenant_uuid,
+        key: 'SHALAT_OPTIONS',
+        value: JSON.stringify(options),
+      },
+    });
+
+    return {
+      message: 'Berhasil menyimpan jadwal sholat',
+      options,
+    };
+  }
+
   async findByDateAndShalat(tenant_uuid: string, date: string, shalat_name?: string, classroom_id?: string) {
     const dateObj = new Date(date);
     

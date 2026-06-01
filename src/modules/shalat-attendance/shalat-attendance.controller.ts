@@ -55,6 +55,33 @@ export class ShalatAttendanceController {
     return this.svc.scanRfid(t, dto);
   }
 
+  @Get('options')
+  @Roles(
+    Role.SUPER_ADMIN,
+    Role.ADMIN_PESANTREN,
+    Role.USTAD,
+    Role.STAFF_PESANTREN,
+  )
+  @ApiOperation({ summary: 'Get shalat options' })
+  getOptions(@CurrentUser('tenant_uuid') t: string) {
+    return this.svc.getOptions(t);
+  }
+
+  @Post('options')
+  @Roles(
+    Role.SUPER_ADMIN,
+    Role.ADMIN_PESANTREN,
+    Role.USTAD,
+    Role.STAFF_PESANTREN,
+  )
+  @ApiOperation({ summary: 'Update shalat options' })
+  updateOptions(
+    @CurrentUser('tenant_uuid') t: string,
+    @Body() body: { options: string[] },
+  ) {
+    return this.svc.updateOptions(t, body.options);
+  }
+
   @Get('by-date')
   @Roles(
     Role.SUPER_ADMIN,
