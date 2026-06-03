@@ -18,6 +18,7 @@ export class CreateFeeCategoryDto {
   @ApiProperty({ required: false }) @IsOptional() @IsNumber() due_day?: number;
   @ApiProperty({ required: false }) @IsOptional() @IsString() image_url?: string;
   @ApiProperty({ required: false }) @IsOptional() is_active?: boolean;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() unit_id?: string;
 }
 
 export class UpdateFeeCategoryDto extends PartialType(CreateFeeCategoryDto) {}

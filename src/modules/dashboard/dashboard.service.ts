@@ -1,13 +1,44 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { XenditService } from '../tenant/xendit.service';
+import { ClsService } from 'nestjs-cls';
 
 @Injectable()
 export class DashboardService {
   constructor(
     private prisma: PrismaService,
     private xenditService: XenditService,
+    private cls: ClsService,
   ) {}
+
+  // Helper for deduplicating multi-unit students (Virtual Grouping)
+  private async getUniqueStudentCount(tenantUuid: string, unitFilter: any, statusFilter?: any) {
+    const where: any = { tenant_uuid: tenantUuid, deleted_at: null, ...unitFilter };
+    if (statusFilter) {
+      where.status = statusFilter;
+    }
+
+    // If filtering by a specific unit, we can just use normal count since duplicates only exist across units
+    if (unitFilter.unit_id) {
+      return this.prisma.student.count({ where });
+    }
+
+    // If Yayasan level, fetch and deduplicate
+    const students = await this.prisma.student.findMany({
+      where,
+      select: { nik: true, name: true, birth_date: true },
+    });
+
+    const uniqueSet = new Set<string>();
+    for (const s of students) {
+      const key = (s.nik && s.nik.trim() !== '') 
+        ? s.nik 
+        : `${s.name.toLowerCase()}_${s.birth_date ? new Date(s.birth_date).getTime() : ''}`;
+      uniqueSet.add(key);
+    }
+
+    return uniqueSet.size;
+  }
 
   async getStats(tenantUuid: string, startDate?: string, endDate?: string) {
     if (!tenantUuid) {
@@ -22,6 +53,11 @@ export class DashboardService {
         recent_transactions: [],
       };
     }
+
+    const unitId = this.cls.get('unit_id');
+    const unitFilter = unitId ? { unit_id: unitId } : {};
+    const studentUnitFilter = unitId ? { student: { unit_id: unitId } } : {};
+    const teacherUnitFilter = unitId ? { teacher: { unit_id: unitId } } : {};
 
     const now = new Date();
     const year = now.getFullYear();
@@ -72,17 +108,11 @@ export class DashboardService {
       pendingPermissionsCount,
       tenantWallet,
     ] = await Promise.all([
-      this.prisma.student.count({
-        where: { tenant_uuid: tenantUuid, deleted_at: null },
-      }),
-      this.prisma.student.count({
-        where: { tenant_uuid: tenantUuid, status: { in: ['AKTIF', 'active'] }, deleted_at: null },
-      }),
-      this.prisma.student.count({
-        where: { tenant_uuid: tenantUuid, status: 'CALON', deleted_at: null },
-      }),
+      this.getUniqueStudentCount(tenantUuid, unitFilter),
+      this.getUniqueStudentCount(tenantUuid, unitFilter, { in: ['AKTIF', 'active'] }),
+      this.getUniqueStudentCount(tenantUuid, unitFilter, 'CALON'),
       this.prisma.teacher.count({
-        where: { tenant_uuid: tenantUuid, deleted_at: null },
+        where: { tenant_uuid: tenantUuid, deleted_at: null, ...unitFilter },
       }),
       this.prisma.dormitory.count({ where: { tenant_uuid: tenantUuid } }),
       this.prisma.bill.count({
@@ -101,12 +131,12 @@ export class DashboardService {
       }),
       this.prisma.attendance.groupBy({
         by: ['status'],
-        where: { tenant_uuid: tenantUuid, date: today },
+        where: { tenant_uuid: tenantUuid, date: today, ...studentUnitFilter },
         _count: { _all: true },
       }),
       this.prisma.teacherAttendance.groupBy({
         by: ['status'],
-        where: { tenant_uuid: tenantUuid, date: today },
+        where: { tenant_uuid: tenantUuid, date: today, ...teacherUnitFilter },
         _count: { _all: true },
       }),
       this.prisma.bill.findMany({
@@ -174,7 +204,7 @@ export class DashboardService {
         select: { max_students: true, slug: true, ppdb_is_active: true, name: true, logo: true, description: true, addon_koperasi: true, addon_inventaris: true, storage_limit: true, storage_used: true }
       }),
       this.prisma.studentPermission.count({
-        where: { tenant_uuid: tenantUuid, status: 'pending' }
+        where: { tenant_uuid: tenantUuid, status: 'pending', ...studentUnitFilter }
       }),
       this.prisma.tenantWallet.findUnique({
         where: { tenant_uuid: tenantUuid }

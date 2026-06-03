@@ -10,12 +10,16 @@ import { CreateStudentDto, UpdateStudentDto, BulkMutateStudentDto } from './dto/
 import * as bcrypt from 'bcryptjs';
 import { Prisma } from '@prisma/client';
 import { normalizePhone } from '../../common/utils/phone.util';
+import { ClsService } from 'nestjs-cls';
 
 @Injectable()
 export class StudentService {
   private readonly logger = new Logger(StudentService.name);
 
-  constructor(private prisma: PrismaService) { }
+  constructor(
+    private prisma: PrismaService,
+    private cls: ClsService,
+  ) { }
 
   async create(tenantUuid: string, dto: CreateStudentDto) {
     try {
@@ -76,6 +80,31 @@ export class StudentService {
           }
         }
 
+        // --- Duplicate Check Across Units ---
+        const duplicateConditions: any[] = [];
+        if (sanitizedData.nik) {
+          duplicateConditions.push({ nik: sanitizedData.nik });
+        }
+        if (sanitizedData.name && sanitizedData.parent_phone) {
+          duplicateConditions.push({ name: sanitizedData.name, parent_phone: sanitizedData.parent_phone });
+        }
+        
+        if (duplicateConditions.length > 0) {
+          const existingStudent = await tx.student.findFirst({
+            where: {
+              tenant_uuid: tenantUuid,
+              deleted_at: null,
+              OR: duplicateConditions,
+            },
+            include: { unit: { select: { name: true } } }
+          });
+
+          if (existingStudent) {
+             const unitName = existingStudent.unit?.name || 'Yayasan';
+             throw new ConflictException(`Data santri (NIK atau Nama & No HP yang sama) sudah terdaftar di unit ${unitName}. Silakan gunakan fitur Tarik Data Santri Lintas Unit jika Anda Admin, atau hubungi pihak sekolah.`);
+          }
+        }
+
         const student = await tx.student.create({
           data: {
             ...sanitizedData,
@@ -118,6 +147,111 @@ export class StudentService {
       this.logger.error('Failed to create student', error.stack);
       throw error;
     }
+  }
+
+  async searchGlobal(tenantUuid: string, search?: string, filterUnitId?: string, filterClassroomId?: string, filterStatus?: string) {
+    if (!search && !filterUnitId && !filterClassroomId && !filterStatus) {
+      return [];
+    }
+    if (search && search.length < 3 && !filterUnitId && !filterClassroomId && !filterStatus) {
+      return [];
+    }
+    
+    const currentUnitId = this.cls.get('unit_id');
+    const whereClause: any = {
+      tenant_uuid: tenantUuid,
+      deleted_at: null,
+      ...(currentUnitId ? { unit_id: { not: currentUnitId } } : {}),
+    };
+
+    if (filterUnitId) {
+      // Override the unit_id NOT logic if they specifically search for a unit (though it should never be their own unit anyway)
+      whereClause.unit_id = filterUnitId;
+    }
+    if (filterClassroomId) {
+      whereClause.classroom_id = filterClassroomId;
+    }
+    if (filterStatus) {
+      whereClause.status = filterStatus;
+    }
+
+    if (search && search.length >= 3) {
+      whereClause.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { nis: { contains: search, mode: 'insensitive' } },
+        { nik: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    const students = await this.prisma.student.findMany({
+      where: whereClause,
+      include: {
+        classroom: { select: { name: true } },
+        unit: { select: { name: true } },
+      },
+      take: 100, // Increased take to 100 for collective pull
+    });
+
+    return students;
+  }
+
+  async cloneToUnit(tenantUuid: string, studentId: string) {
+    const unitId = this.cls.get('unit_id');
+    if (!unitId) throw new BadRequestException('Bukan admin unit');
+
+    const source = await this.prisma.student.findFirst({
+      where: { id: studentId, tenant_uuid: tenantUuid, deleted_at: null },
+    });
+    if (!source) throw new NotFoundException('Santri tidak ditemukan');
+
+    // Check if already exists in this unit (by NIK or name + parent phone)
+    const existingInUnit = await this.prisma.student.findFirst({
+      where: {
+        tenant_uuid: tenantUuid,
+        unit_id: unitId,
+        deleted_at: null,
+        OR: [
+          ...(source.nik ? [{ nik: source.nik }] : []),
+          { name: source.name, parent_phone: source.parent_phone },
+        ],
+      },
+    });
+    if (existingInUnit) {
+      throw new ConflictException('Santri sudah terdaftar di unit ini');
+    }
+
+    // Clone the student data to new unit
+    const cloned = await this.prisma.student.create({
+      data: {
+        tenant_uuid: tenantUuid,
+        unit_id: unitId,
+        name: source.name,
+        nik: null, // NIK unique constraint — leave null for clone
+        gender: source.gender,
+        birth_place: source.birth_place,
+        birth_date: source.birth_date,
+        address: source.address,
+        photo: source.photo,
+        father_name: source.father_name,
+        father_job: source.father_job,
+        father_address: source.father_address,
+        mother_name: source.mother_name,
+        mother_job: source.mother_job,
+        mother_address: source.mother_address,
+        parent_phone: source.parent_phone,
+        parent_email: source.parent_email,
+        last_education: source.last_education,
+        country: source.country,
+        province: source.province,
+        city: source.city,
+        district: source.district,
+        village: source.village,
+        entry_year: new Date().getFullYear(),
+        status: 'CALON',
+      },
+    });
+
+    return { success: true, message: 'Santri berhasil ditarik ke unit ini', data: cloned };
   }
 
   async findAll(
@@ -170,6 +304,12 @@ export class StudentService {
     if (quran_teacher_id) where.quran_teacher_id = quran_teacher_id;
     if (kitab_teacher_id) where.kitab_teacher_id = kitab_teacher_id;
     if (entry_year) where.entry_year = parseInt(entry_year);
+
+    // ADMIN_UNIT: only see students in their own unit
+    const unitId = this.cls.get('unit_id');
+    if (unitId) {
+      where.unit_id = unitId;
+    }
 
     const orderByClause: any = {};
     if (sort) {

@@ -8,10 +8,14 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
 import * as bcrypt from 'bcryptjs';
 import { Prisma } from '@prisma/client';
+import { ClsService } from 'nestjs-cls';
 
 @Injectable()
 export class UserService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private cls: ClsService,
+  ) {}
 
   async create(tenantUuid: string, dto: CreateUserDto) {
     const existing = await this.prisma.user.findFirst({
@@ -25,13 +29,21 @@ export class UserService {
     if (existing)
       throw new ConflictException('Email atau telepon sudah terdaftar');
 
+    const payload: any = {
+      ...dto,
+      tenant_uuid: tenantUuid,
+      password: await bcrypt.hash(dto.password, 12),
+      base_salary: dto.base_salary ? new Prisma.Decimal(dto.base_salary) : undefined,
+    };
+
+    if (!payload.koperasi_outlet_id) delete payload.koperasi_outlet_id;
+    if (!payload.unit_id) delete payload.unit_id;
+
+    if (dto.koperasi_outlet_id) payload.koperasi_outlet_id = dto.koperasi_outlet_id;
+    if (dto.unit_id || this.cls.get('unit_id')) payload.unit_id = dto.unit_id || this.cls.get('unit_id');
+
     return this.prisma.user.create({
-      data: {
-        ...dto,
-        tenant_uuid: tenantUuid,
-        password: await bcrypt.hash(dto.password, 12),
-        base_salary: dto.base_salary ? new Prisma.Decimal(dto.base_salary) : undefined,
-      },
+      data: payload,
       select: {
         id: true,
         name: true,
@@ -48,6 +60,11 @@ export class UserService {
     const where: any = { deleted_at: null };
     if (tenantUuid) where.tenant_uuid = tenantUuid;
     if (role) where.role = role;
+
+    const unitId = this.cls.get('unit_id');
+    if (unitId) {
+      where.unit_id = unitId;
+    }
 
     const [data, total] = await Promise.all([
       this.prisma.user.findMany({
@@ -105,6 +122,12 @@ export class UserService {
   async findOne(tenantUuid: string | null, id: string) {
     const where: any = { id, deleted_at: null };
     if (tenantUuid) where.tenant_uuid = tenantUuid;
+    
+    const unitId = this.cls.get('unit_id');
+    if (unitId) {
+      where.unit_id = unitId;
+    }
+
     const user = await this.prisma.user.findFirst({
       where,
       select: {

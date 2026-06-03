@@ -11,116 +11,116 @@ datasource db {
 //  TENANT (PESANTREN)
 // ═══════════════════════════════════════════════════════════════
 model Pesantren {
-  id        String   @id @default(uuid()) @db.Uuid
-  name      String
-  slug      String   @unique
-  domain    String?  @unique
-  email     String?
-  phone     String?
-  address   String?
-  logo      String?
+  id         String  @id @default(uuid()) @db.Uuid
+  name       String
+  slug       String  @unique
+  domain     String? @unique
+  email      String?
+  phone      String?
+  address    String?
+  logo       String?
   letterhead String?
-  
+
   // Xendit / Payment
   xendit_sub_account_id String?
-  platform_fee          Decimal  @default(0) @db.Decimal(12,2) // Total fee taken by platform (Surcharge + Deduction) for VA/Invoice
-  surcharge_fee         Decimal  @default(0) @db.Decimal(12,2) // Extra amount added to student bill for VA/Invoice
-  qris_platform_fee     Decimal  @default(0) @db.Decimal(12,2) // Total fee taken by platform for QRIS
-  qris_surcharge_fee    Decimal  @default(0) @db.Decimal(12,2) // Extra amount added to student bill for QRIS
-  qris_fee_is_percent   Boolean  @default(false)
-  manual_topup_fee      Decimal  @default(0) @db.Decimal(12,2) // Biaya admin untuk top up manual oleh pesantren
-  xendit_status         String   @default("inactive") // active, inactive
-  
+  platform_fee          Decimal @default(0) @db.Decimal(12, 2) // Total fee taken by platform (Surcharge + Deduction) for VA/Invoice
+  surcharge_fee         Decimal @default(0) @db.Decimal(12, 2) // Extra amount added to student bill for VA/Invoice
+  qris_platform_fee     Decimal @default(0) @db.Decimal(12, 2) // Total fee taken by platform for QRIS
+  qris_surcharge_fee    Decimal @default(0) @db.Decimal(12, 2) // Extra amount added to student bill for QRIS
+  qris_fee_is_percent   Boolean @default(false)
+  manual_topup_fee      Decimal @default(0) @db.Decimal(12, 2) // Biaya admin untuk top up manual oleh pesantren
+  xendit_status         String  @default("inactive") // active, inactive
+
   // Subscription
-  subscription_status   String   @default("trial") // trial, active, suspended, expired
-  trial_duration_days   Int      @default(14)
-  expired_at            DateTime?
-  billing_cycle         String   @default("monthly") // monthly, yearly
-  billing_day           Int      @default(1)
-  billing_type          String   @default("per_student") // per_student, fixed
-  price_per_student     Decimal  @default(0) @db.Decimal(12,2)
-  fixed_billing_amount  Decimal  @default(0) @db.Decimal(12,2)
-  billing_email         String?
-  max_students          Int      @default(500)
-  
+  subscription_status  String    @default("trial") // trial, active, suspended, expired
+  trial_duration_days  Int       @default(14)
+  expired_at           DateTime?
+  billing_cycle        String    @default("monthly") // monthly, yearly
+  billing_day          Int       @default(1)
+  billing_type         String    @default("per_student") // per_student, fixed
+  price_per_student    Decimal   @default(0) @db.Decimal(12, 2)
+  fixed_billing_amount Decimal   @default(0) @db.Decimal(12, 2)
+  billing_email        String?
+  max_students         Int       @default(500)
+
   // Landing Page Configuration
-  description           String?  @db.Text
-  landing_page_template String   @default("MODERN")
-  landing_page_config   Json?    @default("{\"primaryColor\": \"#10b981\", \"secondaryColor\": \"#064e3b\", \"heroTitle\": \"Selamat Datang\", \"heroSubtitle\": \"Membangun Generasi Rabbani\", \"fontFamily\": \"Inter\"}")
+  description             String? @db.Text
+  landing_page_template   String  @default("MODERN")
+  landing_page_config     Json?   @default("{\"primaryColor\": \"#10b981\", \"secondaryColor\": \"#064e3b\", \"heroTitle\": \"Selamat Datang\", \"heroSubtitle\": \"Membangun Generasi Rabbani\", \"fontFamily\": \"Inter\"}")
   can_manage_landing_page Boolean @default(false)
 
   // Add-ons / Fitur Tambahan
-  addon_koperasi        Boolean  @default(false)
-  addon_wa_gateway      Boolean  @default(false)
-  addon_landing_page    Boolean  @default(false)
+  addon_koperasi            Boolean @default(false)
+  addon_wa_gateway          Boolean @default(false)
+  addon_landing_page        Boolean @default(false)
   min_tenant_wallet_balance Decimal @default(0) @db.Decimal(12, 2)
-  storage_limit           BigInt    @default(1073741824) // 1GB
-  storage_used            BigInt    @default(0)
-  addon_inventaris      Boolean  @default(false)
-  
-  is_active   Boolean  @default(true)
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
-  deleted_at  DateTime?
-  
+  storage_limit             BigInt  @default(1073741824) // 1GB
+  storage_used              BigInt  @default(0)
+  addon_inventaris          Boolean @default(false)
+
+  is_active  Boolean   @default(true)
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
   calendar_type String @default("gregorian") // gregorian, hijri
 
   // Relations
-  users              User[]
-  students           Student[]
-  teachers           Teacher[]
-  classrooms         Classroom[]
-  dormitories        Dormitory[]
-  subjects           Subject[]
-  academic_years     AcademicYear[]
-  fee_categories     FeeCategory[]
-  bills              Bill[]
-  transactions       Transaction[]
-  wallets            Wallet[]
-  wallet_transactions WalletTransaction[]
-  tenant_wallet      TenantWallet?
-  tenant_wallet_txs  TenantWalletTransaction[]
-  tenant_topup_requests TenantTopupRequest[]
+  users                      User[]
+  students                   Student[]
+  teachers                   Teacher[]
+  classrooms                 Classroom[]
+  dormitories                Dormitory[]
+  subjects                   Subject[]
+  academic_years             AcademicYear[]
+  fee_categories             FeeCategory[]
+  bills                      Bill[]
+  transactions               Transaction[]
+  wallets                    Wallet[]
+  wallet_transactions        WalletTransaction[]
+  tenant_wallet              TenantWallet?
+  tenant_wallet_txs          TenantWalletTransaction[]
+  tenant_topup_requests      TenantTopupRequest[]
   tenant_withdrawal_requests TenantWithdrawalRequest[]
-  topup_logs         TopupLog[]
-  attendances        Attendance[]
-  shalat_attendances ShalatAttendance[]
-  tahfidz_records    TahfidzRecord[]
-  violations         Violation[]
-  health_records     HealthRecord[]
-  permissions_record StudentPermission[]
-  payrolls           Payroll[]
-  payroll_items      PayrollItem[]
-  settings           Setting[]
-  posts              Post[]
-  saas_invoices      SaasInvoice[]
-  usage_logs         UsageLog[]
-  academic_periods   AcademicPeriod[]
-  question_banks     QuestionBank[]
-  exams              Exam[]
-  exam_schedules     ExamSchedule[]
-  exam_results       ExamResult[]
-  report_cards       ReportCard[]
-  donation_disbursements DonationDisbursement[]
-  teacher_attendances TeacherAttendance[]
-  teaching_journals   TeachingJournal[]
-  student_histories   StudentHistory[]
-  daily_assignments   DailyAssignment[]
-  assignment_grades   AssignmentGrade[]
-  expenditures        Expenditure[]
-  user_activities     UserActivity[]
-  problem_tickets     ProblemTicket[]
-  koperasi_outlets    KoperasiOutlet[]
-  product_categories  ProductCategory[]
-  product_units       ProductUnit[]
-  products            Product[]
-  pos_sessions        PosSession[]
-  pos_orders          PosOrder[]
-  stock_movements     StockMovement[]
-  stock_opnames       StockOpname[]
-  promotions          Promotion[]
-  subject_categories  SubjectCategory[]
-  kitabs              Kitab[]
+  topup_logs                 TopupLog[]
+  attendances                Attendance[]
+  shalat_attendances         ShalatAttendance[]
+  tahfidz_records            TahfidzRecord[]
+  violations                 Violation[]
+  health_records             HealthRecord[]
+  permissions_record         StudentPermission[]
+  payrolls                   Payroll[]
+  payroll_items              PayrollItem[]
+  settings                   Setting[]
+  posts                      Post[]
+  saas_invoices              SaasInvoice[]
+  usage_logs                 UsageLog[]
+  academic_periods           AcademicPeriod[]
+  question_banks             QuestionBank[]
+  exams                      Exam[]
+  exam_schedules             ExamSchedule[]
+  exam_results               ExamResult[]
+  report_cards               ReportCard[]
+  donation_disbursements     DonationDisbursement[]
+  teacher_attendances        TeacherAttendance[]
+  teaching_journals          TeachingJournal[]
+  student_histories          StudentHistory[]
+  daily_assignments          DailyAssignment[]
+  assignment_grades          AssignmentGrade[]
+  expenditures               Expenditure[]
+  user_activities            UserActivity[]
+  problem_tickets            ProblemTicket[]
+  koperasi_outlets           KoperasiOutlet[]
+  product_categories         ProductCategory[]
+  product_units              ProductUnit[]
+  products                   Product[]
+  pos_sessions               PosSession[]
+  pos_orders                 PosOrder[]
+  stock_movements            StockMovement[]
+  stock_opnames              StockOpname[]
+  promotions                 Promotion[]
+  subject_categories         SubjectCategory[]
+  kitabs                     Kitab[]
 
   inventory_items      InventoryItem[]
   inventory_categories InventoryCategory[]
@@ -128,10 +128,60 @@ model Pesantren {
   inventory_mutations  InventoryMutation[]
 
   // PPDB (Student Registration)
-  ppdb_is_active      Boolean  @default(false)
-  ppdb_waves          PpdbWave[]
+  ppdb_is_active  Boolean         @default(false)
+  ppdb_waves      PpdbWave[]
+  education_units EducationUnit[]
 
   @@map("pesantrens")
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  EDUCATION UNITS (SUB-TENANT)
+// ═══════════════════════════════════════════════════════════════
+model EducationUnit {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_uuid String   @db.Uuid
+  name        String
+  type        String? // SMP, SMA, MA, MADIN, etc.
+  headmaster  String? // Kepala sekolah/madrasah
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  pesantren  Pesantren   @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  users      User[]
+  students   Student[]
+  teachers   Teacher[]
+  classrooms Classroom[]
+  teacher_units TeacherEducationUnit[]
+  ppdb_is_active Boolean @default(false)
+  subjects           Subject[]
+  subject_categories SubjectCategory[]
+  question_banks     QuestionBank[]
+  exams              Exam[]
+  fee_categories     FeeCategory[]
+  bills              Bill[]
+  transactions       Transaction[]
+
+  @@unique([tenant_uuid, name])
+  @@index([tenant_uuid])
+  @@map("education_units")
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TEACHER EDUCATION UNIT PIVOT
+// ═══════════════════════════════════════════════════════════════
+model TeacherEducationUnit {
+  id         String   @id @default(uuid()) @db.Uuid
+  teacher_id String   @db.Uuid
+  unit_id    String   @db.Uuid
+  created_at DateTime @default(now())
+
+  teacher Teacher       @relation(fields: [teacher_id], references: [id], onDelete: Cascade)
+  unit    EducationUnit @relation(fields: [unit_id], references: [id], onDelete: Cascade)
+
+  @@unique([teacher_id, unit_id])
+  @@map("teacher_education_units")
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -142,6 +192,7 @@ enum Role {
   ADMIN_PESANTREN
   FINANCE_PESANTREN
   STAFF_PESANTREN
+  ADMIN_UNIT
   USTAD
   WALI_SANTRI
   KEPALA_KOPERASI
@@ -157,24 +208,26 @@ model User {
   password      String
   role          Role      @default(STAFF_PESANTREN)
   is_active     Boolean   @default(true)
-  base_salary   Decimal   @default(0) @db.Decimal(12,2)
+  base_salary   Decimal   @default(0) @db.Decimal(12, 2)
   last_login_at DateTime?
   created_at    DateTime  @default(now())
   updated_at    DateTime  @updatedAt
   deleted_at    DateTime?
 
-  pesantren     Pesantren?  @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
-  teacher       Teacher?
-  payroll_items PayrollItem[]
-  refresh_tokens RefreshToken[]
-  notifications UserNotification[]
-  activities    UserActivity[]
-  created_tickets ProblemTicket[] @relation("TicketCreator")
-  ticket_messages ProblemTicketMessage[]
-  pos_sessions    PosSession[]
-  pos_cashier_orders PosOrder[] @relation("PosCashier")
-  
-  koperasi_outlet_id String? @db.Uuid
+  pesantren          Pesantren?             @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  unit_id            String?                @db.Uuid
+  unit               EducationUnit?         @relation(fields: [unit_id], references: [id])
+  teacher            Teacher?
+  payroll_items      PayrollItem[]
+  refresh_tokens     RefreshToken[]
+  notifications      UserNotification[]
+  activities         UserActivity[]
+  created_tickets    ProblemTicket[]        @relation("TicketCreator")
+  ticket_messages    ProblemTicketMessage[]
+  pos_sessions       PosSession[]
+  pos_cashier_orders PosOrder[]             @relation("PosCashier")
+
+  koperasi_outlet_id String?         @db.Uuid
   koperasi_outlet    KoperasiOutlet? @relation("UserOutlet", fields: [koperasi_outlet_id], references: [id])
   stock_movements    StockMovement[]
 
@@ -185,11 +238,11 @@ model User {
 }
 
 model RefreshToken {
-  id          String   @id @default(uuid()) @db.Uuid
-  user_id     String   @db.Uuid
-  token       String   @unique
-  expires_at  DateTime
-  created_at  DateTime @default(now())
+  id         String   @id @default(uuid()) @db.Uuid
+  user_id    String   @db.Uuid
+  token      String   @unique
+  expires_at DateTime
+  created_at DateTime @default(now())
 
   user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
@@ -227,11 +280,11 @@ model AcademicYear {
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 
-  pesantren  Pesantren  @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
-  students   Student[]
-  classrooms Classroom[]
-  periods    AcademicPeriod[]
-  exams      Exam[]
+  pesantren    Pesantren        @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  students     Student[]
+  classrooms   Classroom[]
+  periods      AcademicPeriod[]
+  exams        Exam[]
   report_cards ReportCard[]
 
   @@unique([tenant_uuid, name])
@@ -243,15 +296,15 @@ model AcademicPeriod {
   id               String   @id @default(uuid()) @db.Uuid
   tenant_uuid      String   @db.Uuid
   academic_year_id String   @db.Uuid
-  name             String   // Semester Ganjil, Catur Wulan 1, etc.
+  name             String // Semester Ganjil, Catur Wulan 1, etc.
   start_date       DateTime
   end_date         DateTime
   is_active        Boolean  @default(false)
   created_at       DateTime @default(now())
   updated_at       DateTime @updatedAt
 
-  pesantren     Pesantren     @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
-  academic_year AcademicYear  @relation(fields: [academic_year_id], references: [id], onDelete: Cascade)
+  pesantren     Pesantren    @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  academic_year AcademicYear @relation(fields: [academic_year_id], references: [id], onDelete: Cascade)
   report_cards  ReportCard[]
   exams         Exam[]
 
@@ -263,6 +316,7 @@ model AcademicPeriod {
 model Subject {
   id          String   @id @default(uuid()) @db.Uuid
   tenant_uuid String   @db.Uuid
+  unit_id     String?  @db.Uuid
   name        String
   code        String?
   category_id String?  @db.Uuid
@@ -271,15 +325,16 @@ model Subject {
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 
-  pesantren      Pesantren        @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
-  category       SubjectCategory? @relation(fields: [category_id], references: [id])
-  schedules      Schedule[]
-  question_banks QuestionBank[]
-  exam_schedules ExamSchedule[]
-  report_details ReportCardDetail[]
+  pesantren         Pesantren          @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  unit              EducationUnit?     @relation(fields: [unit_id], references: [id])
+  category          SubjectCategory?   @relation(fields: [category_id], references: [id])
+  schedules         Schedule[]
+  question_banks    QuestionBank[]
+  exam_schedules    ExamSchedule[]
+  report_details    ReportCardDetail[]
   daily_assignments DailyAssignment[]
 
-  @@unique([tenant_uuid, code])
+  @@unique([tenant_uuid, unit_id, code])
   @@index([tenant_uuid])
   @@map("subjects")
 }
@@ -287,37 +342,41 @@ model Subject {
 model SubjectCategory {
   id          String   @id @default(uuid()) @db.Uuid
   tenant_uuid String   @db.Uuid
+  unit_id     String?  @db.Uuid
   name        String
   description String?
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 
   pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  unit      EducationUnit? @relation(fields: [unit_id], references: [id])
   subjects  Subject[]
 
-  @@unique([tenant_uuid, name])
+  @@unique([tenant_uuid, unit_id, name])
   @@index([tenant_uuid])
   @@map("subject_categories")
 }
 
 model Classroom {
-  id                   String   @id @default(uuid()) @db.Uuid
-  tenant_uuid          String   @db.Uuid
-  name                 String
-  level                String?
-  academic_year_id     String?  @db.Uuid
-  homeroom_teacher_id  String?  @db.Uuid
-  capacity             Int      @default(40)
-  created_at           DateTime @default(now())
-  updated_at           DateTime @updatedAt
+  id                  String   @id @default(uuid()) @db.Uuid
+  tenant_uuid         String   @db.Uuid
+  name                String
+  level               String?
+  academic_year_id    String?  @db.Uuid
+  homeroom_teacher_id String?  @db.Uuid
+  capacity            Int      @default(40)
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
 
-  pesantren      Pesantren     @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
-  academic_year  AcademicYear? @relation(fields: [academic_year_id], references: [id])
-  homeroom       Teacher?      @relation(fields: [homeroom_teacher_id], references: [id])
-  students       Student[]
-  schedules      Schedule[]
-  exam_schedules ExamSchedule[]
-  report_cards   ReportCard[]
+  pesantren         Pesantren         @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  unit_id           String?           @db.Uuid
+  unit              EducationUnit?    @relation(fields: [unit_id], references: [id])
+  academic_year     AcademicYear?     @relation(fields: [academic_year_id], references: [id])
+  homeroom          Teacher?          @relation(fields: [homeroom_teacher_id], references: [id])
+  students          Student[]
+  schedules         Schedule[]
+  exam_schedules    ExamSchedule[]
+  report_cards      ReportCard[]
   daily_assignments DailyAssignment[]
 
   @@unique([tenant_uuid, name, academic_year_id])
@@ -326,13 +385,13 @@ model Classroom {
 }
 
 model Dormitory {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenant_uuid String   @db.Uuid
-  name        String
+  id           String   @id @default(uuid()) @db.Uuid
+  tenant_uuid  String   @db.Uuid
+  name         String
   mushrif_name String?
-  capacity    Int      @default(100)
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
+  capacity     Int      @default(100)
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
 
   pesantren Pesantren       @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
   rooms     DormitoryRoom[]
@@ -363,18 +422,18 @@ model Schedule {
   classroom_id String   @db.Uuid
   subject_id   String   @db.Uuid
   teacher_id   String?  @db.Uuid
-  day_of_week  Int      // 0=Sunday, 1=Monday...
+  day_of_week  Int // 0=Sunday, 1=Monday...
   start_time   String
   end_time     String
   created_at   DateTime @default(now())
   updated_at   DateTime @updatedAt
 
-  classroom   Classroom   @relation(fields: [classroom_id], references: [id], onDelete: Cascade)
-  subject     Subject     @relation(fields: [subject_id], references: [id])
-  teacher     Teacher?    @relation(fields: [teacher_id], references: [id])
-  kitab_id    String?     @db.Uuid
-  kitab       Kitab?      @relation(fields: [kitab_id], references: [id])
-  attendances Attendance[]
+  classroom           Classroom           @relation(fields: [classroom_id], references: [id], onDelete: Cascade)
+  subject             Subject             @relation(fields: [subject_id], references: [id])
+  teacher             Teacher?            @relation(fields: [teacher_id], references: [id])
+  kitab_id            String?             @db.Uuid
+  kitab               Kitab?              @relation(fields: [kitab_id], references: [id])
+  attendances         Attendance[]
   teacher_attendances TeacherAttendance[]
   teaching_journals   TeachingJournal[]
 
@@ -392,8 +451,8 @@ model Kitab {
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 
-  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
-  schedules Schedule[]
+  pesantren      Pesantren      @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  schedules      Schedule[]
   question_banks QuestionBank[]
   exam_schedules ExamSchedule[]
 
@@ -406,65 +465,67 @@ model Kitab {
 //  SANTRI (STUDENT)
 // ═══════════════════════════════════════════════════════════════
 model Student {
-  id               String   @id @default(uuid()) @db.Uuid
-  tenant_uuid      String   @db.Uuid
-  nis              String?
-  nisn             String?
-  nik              String?
-  name             String
-  gender           String?  // L, P
-  birth_place      String?
-  birth_date       DateTime?
-  address          String?
-  photo            String?
-  
-  father_name      String?
-  father_job       String?
-  father_address   String?
-  mother_name      String?
-  mother_job       String?
-  mother_address   String?
-  parent_phone     String?
-  parent_email     String?
-  
+  id          String    @id @default(uuid()) @db.Uuid
+  tenant_uuid String    @db.Uuid
+  nis         String?
+  nisn        String?
+  nik         String?
+  name        String
+  gender      String? // L, P
+  birth_place String?
+  birth_date  DateTime?
+  address     String?
+  photo       String?
+
+  father_name    String?
+  father_job     String?
+  father_address String?
+  mother_name    String?
+  mother_job     String?
+  mother_address String?
+  parent_phone   String?
+  parent_email   String?
+
   // Fisik & Pendidikan
-  last_education   String?
-  weight           Int?
-  height           Int?
+  last_education String?
+  weight         Int?
+  height         Int?
 
   // Alamat Detil
-  country          String?  @default("Indonesia")
-  province         String?
-  city             String?
-  district         String?
-  village          String?
+  country  String? @default("Indonesia")
+  province String?
+  city     String?
+  district String?
+  village  String?
 
   // Dokumen
-  file_kk          String?
-  file_ijazah      String?
-  file_akta        String?
-  file_others      String?
-  
-  academic_year_id    String?  @db.Uuid
-  classroom_id        String?  @db.Uuid
-  dormitory_id        String?  @db.Uuid
-  dormitory_room_id   String?  @db.Uuid
-  tahfidz_teacher_id  String?  @db.Uuid
-  quran_teacher_id    String?  @db.Uuid
-  kitab_teacher_id    String?  @db.Uuid
-  ppdb_wave_id        String?  @db.Uuid
-  
-  status           String   @default("CALON") // CALON, AKTIF, ALUMNI, BOYONG, KELUAR
-  entry_year       Int?
-  graduation_date  DateTime?
-  rfid             String?
-  fingerprint_id   String?
-  
-  created_at       DateTime @default(now())
-  updated_at       DateTime @updatedAt
-  deleted_at       DateTime?
+  file_kk     String?
+  file_ijazah String?
+  file_akta   String?
+  file_others String?
+
+  academic_year_id   String? @db.Uuid
+  classroom_id       String? @db.Uuid
+  dormitory_id       String? @db.Uuid
+  dormitory_room_id  String? @db.Uuid
+  tahfidz_teacher_id String? @db.Uuid
+  quran_teacher_id   String? @db.Uuid
+  kitab_teacher_id   String? @db.Uuid
+  ppdb_wave_id       String? @db.Uuid
+
+  status          String    @default("CALON") // CALON, AKTIF, ALUMNI, BOYONG, KELUAR
+  entry_year      Int?
+  graduation_date DateTime?
+  rfid            String?
+  fingerprint_id  String?
+
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
 
   pesantren       Pesantren      @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  unit_id         String?        @db.Uuid
+  unit            EducationUnit? @relation(fields: [unit_id], references: [id])
   academic_year   AcademicYear?  @relation(fields: [academic_year_id], references: [id])
   classroom       Classroom?     @relation(fields: [classroom_id], references: [id])
   dormitory       Dormitory?     @relation(fields: [dormitory_id], references: [id])
@@ -473,21 +534,21 @@ model Student {
   quran_teacher   Teacher?       @relation("QuranStudents", fields: [quran_teacher_id], references: [id])
   kitab_teacher   Teacher?       @relation("KitabStudents", fields: [kitab_teacher_id], references: [id])
   ppdb_wave       PpdbWave?      @relation(fields: [ppdb_wave_id], references: [id])
-  
-  wallet           Wallet?
-  bills            Bill[]
-  transactions     Transaction[]
-  attendances      Attendance[]
-  shalat_attendances ShalatAttendance[]
-  tahfidz_records  TahfidzRecord[]
-  violations       Violation[]
-  health_records   HealthRecord[]
+
+  wallet              Wallet?
+  bills               Bill[]
+  transactions        Transaction[]
+  attendances         Attendance[]
+  shalat_attendances  ShalatAttendance[]
+  tahfidz_records     TahfidzRecord[]
+  violations          Violation[]
+  health_records      HealthRecord[]
   student_permissions StudentPermission[]
-  exam_results     ExamResult[]
-  report_cards     ReportCard[]
-  histories        StudentHistory[]
-  assignment_grades AssignmentGrade[]
-  pos_orders       PosOrder[]
+  exam_results        ExamResult[]
+  report_cards        ReportCard[]
+  histories           StudentHistory[]
+  assignment_grades   AssignmentGrade[]
+  pos_orders          PosOrder[]
 
   @@unique([tenant_uuid, nis])
   @@index([tenant_uuid])
@@ -499,41 +560,44 @@ model Student {
 //  GURU (TEACHER)
 // ═══════════════════════════════════════════════════════════════
 model Teacher {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenant_uuid String   @db.Uuid
-  user_id     String?  @unique @db.Uuid
-  nip         String?
-  nik         String?
-  name        String
-  phone       String?
-  address     String?
-  birth_place String?
-  birth_date  DateTime?
-  status      String   @default("active") // active, inactive, resigned
-  stay_type   String?  // mukim, non-mukim
-  photo       String?
-  is_tahfidz_teacher Boolean @default(false)
-  can_manage_quran   Boolean @default(false)
-  can_manage_kitab   Boolean @default(false)
+  id                 String    @id @default(uuid()) @db.Uuid
+  tenant_uuid        String    @db.Uuid
+  user_id            String?   @unique @db.Uuid
+  nip                String?
+  nik                String?
+  name               String
+  phone              String?
+  address            String?
+  birth_place        String?
+  birth_date         DateTime?
+  status             String    @default("active") // active, inactive, resigned
+  stay_type          String? // mukim, non-mukim
+  photo              String?
+  is_tahfidz_teacher Boolean   @default(false)
+  can_manage_quran   Boolean   @default(false)
+  can_manage_kitab   Boolean   @default(false)
   face_descriptor    Json?
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
-  deleted_at  DateTime?
+  created_at         DateTime  @default(now())
+  updated_at         DateTime  @updatedAt
+  deleted_at         DateTime?
 
-  pesantren       Pesantren     @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
-  user            User?         @relation(fields: [user_id], references: [id])
-  classrooms      Classroom[]
-  schedules       Schedule[]
-  tahfidz_students Student[]    @relation("TahfidzStudents")
-  quran_students   Student[]    @relation("QuranStudents")
-  kitab_students   Student[]    @relation("KitabStudents")
-  payroll_items    PayrollItem[]
-  question_banks   QuestionBank[]
-  exam_paper_schedules   ExamSchedule[] @relation("ExamPaperTeacher")
-  exam_supervisor_schedules ExamSchedule[] @relation("ExamSupervisor")
-  attendances      TeacherAttendance[]
-  teaching_journals TeachingJournal[]
-  daily_assignments DailyAssignment[]
+  pesantren                 Pesantren           @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  unit_id                   String?             @db.Uuid
+  unit                      EducationUnit?      @relation(fields: [unit_id], references: [id])
+  user                      User?               @relation(fields: [user_id], references: [id])
+  classrooms                Classroom[]
+  schedules                 Schedule[]
+  tahfidz_students          Student[]           @relation("TahfidzStudents")
+  quran_students            Student[]           @relation("QuranStudents")
+  kitab_students            Student[]           @relation("KitabStudents")
+  payroll_items             PayrollItem[]
+  question_banks            QuestionBank[]
+  exam_paper_schedules      ExamSchedule[]      @relation("ExamPaperTeacher")
+  exam_supervisor_schedules ExamSchedule[]      @relation("ExamSupervisor")
+  attendances               TeacherAttendance[]
+  teaching_journals         TeachingJournal[]
+  daily_assignments         DailyAssignment[]
+  assigned_units            TeacherEducationUnit[]
 
   @@unique([tenant_uuid, nip])
   @@index([tenant_uuid])
@@ -544,21 +608,21 @@ model Teacher {
 //  ATTENDANCE
 // ═══════════════════════════════════════════════════════════════
 model Attendance {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenant_uuid String   @db.Uuid
-  student_id  String   @db.Uuid
-  schedule_id String?  @db.Uuid
-  date        DateTime @db.Date
-  status      String   // hadir, izin, sakit, alpha
+  id          String    @id @default(uuid()) @db.Uuid
+  tenant_uuid String    @db.Uuid
+  student_id  String    @db.Uuid
+  schedule_id String?   @db.Uuid
+  date        DateTime  @db.Date
+  status      String // hadir, izin, sakit, alpha
   check_in    DateTime?
   check_out   DateTime?
   notes       String?
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
 
-  pesantren Pesantren  @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
-  student   Student    @relation(fields: [student_id], references: [id], onDelete: Cascade)
-  schedule  Schedule?  @relation(fields: [schedule_id], references: [id])
+  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  student   Student   @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  schedule  Schedule? @relation(fields: [schedule_id], references: [id])
 
   @@unique([student_id, schedule_id, date])
   @@index([tenant_uuid])
@@ -567,27 +631,27 @@ model Attendance {
 }
 
 model TahfidzRecord {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenant_uuid String   @db.Uuid
-  student_id  String   @db.Uuid
-  teacher_id  String?  @db.Uuid
-  
-  category    String   @default("QURAN") // QURAN, NADHOM
-  
+  id          String  @id @default(uuid()) @db.Uuid
+  tenant_uuid String  @db.Uuid
+  student_id  String  @db.Uuid
+  teacher_id  String? @db.Uuid
+
+  category String @default("QURAN") // QURAN, NADHOM
+
   // For Quran: Surah Name | For Nadhom: Kitab Name
-  title       String   
-  
+  title String
+
   // For Quran: Ayah | For Nadhom: Bait/Line
-  from        Int?
-  to          Int?
-  juz         Int?     // Specific to Quran
-  
-  type        String?  // setoran, murajaah
-  status      String?  // lancar, tidak_lancar
-  date        DateTime @db.Date
-  notes       String?
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
+  from Int?
+  to   Int?
+  juz  Int? // Specific to Quran
+
+  type       String? // setoran, murajaah
+  status     String? // lancar, tidak_lancar
+  date       DateTime @db.Date
+  notes      String?
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
 
   pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
   student   Student   @relation(fields: [student_id], references: [id], onDelete: Cascade)
@@ -637,7 +701,7 @@ model StudentPermission {
   id          String    @id @default(uuid()) @db.Uuid
   tenant_uuid String    @db.Uuid
   student_id  String    @db.Uuid
-  type        String    // pulang, sakit, keperluan
+  type        String // pulang, sakit, keperluan
   reason      String?
   start_date  DateTime  @db.Date
   end_date    DateTime? @db.Date
@@ -660,7 +724,7 @@ model FeeCategory {
   tenant_uuid String   @db.Uuid
   name        String
   type        String   @default("monthly") // monthly, yearly, once
-  amount      Decimal  @db.Decimal(12,2)
+  amount      Decimal  @db.Decimal(12, 2)
   description String?
   is_active   Boolean  @default(true)
   due_day     Int?     @default(10)
@@ -668,9 +732,11 @@ model FeeCategory {
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 
-  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
-  bills     Bill[]
-  transactions Transaction[]
+  pesantren     Pesantren              @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  unit_id       String?                @db.Uuid
+  unit          EducationUnit?         @relation(fields: [unit_id], references: [id])
+  bills         Bill[]
+  transactions  Transaction[]
   disbursements DonationDisbursement[]
 
   @@unique([tenant_uuid, name])
@@ -679,23 +745,25 @@ model FeeCategory {
 }
 
 model Bill {
-  id              String   @id @default(uuid()) @db.Uuid
-  tenant_uuid     String   @db.Uuid
-  student_id      String   @db.Uuid
-  fee_category_id String   @db.Uuid
-  amount          Decimal  @db.Decimal(12,2)
-  amount_paid     Decimal  @default(0) @db.Decimal(12,2)
-  period          String?  // 2026-01, 2026-02, etc
-  due_date        DateTime @db.Date
-  status          String   @default("pending") // pending, partial, paid, overdue
+  id              String    @id @default(uuid()) @db.Uuid
+  tenant_uuid     String    @db.Uuid
+  student_id      String    @db.Uuid
+  fee_category_id String    @db.Uuid
+  amount          Decimal   @db.Decimal(12, 2)
+  amount_paid     Decimal   @default(0) @db.Decimal(12, 2)
+  period          String? // 2026-01, 2026-02, etc
+  due_date        DateTime  @db.Date
+  status          String    @default("pending") // pending, partial, paid, overdue
   notes           String?
   notified_at     DateTime?
-  created_at      DateTime @default(now())
-  updated_at      DateTime @updatedAt
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
 
-  pesantren    Pesantren    @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
-  student      Student      @relation(fields: [student_id], references: [id], onDelete: Cascade)
-  fee_category FeeCategory  @relation(fields: [fee_category_id], references: [id])
+  pesantren    Pesantren     @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  unit_id      String?       @db.Uuid
+  unit         EducationUnit? @relation(fields: [unit_id], references: [id])
+  student      Student       @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  fee_category FeeCategory   @relation(fields: [fee_category_id], references: [id])
   transactions Transaction[]
 
   @@unique([student_id, fee_category_id, period])
@@ -706,27 +774,29 @@ model Bill {
 }
 
 model Transaction {
-  id              String   @id @default(uuid()) @db.Uuid
-  tenant_uuid     String   @db.Uuid
-  reference_no    String   @unique
-  student_id      String   @db.Uuid
-  bill_id         String?  @db.Uuid
-  fee_category_id String?  @db.Uuid
-  amount_paid     Decimal  @db.Decimal(12,2)
-  payment_date    DateTime @default(now())
-  payment_method  String   @default("cash") // cash, transfer, gateway
-  payment_channel String?
+  id                String   @id @default(uuid()) @db.Uuid
+  tenant_uuid       String   @db.Uuid
+  reference_no      String   @unique
+  student_id        String   @db.Uuid
+  bill_id           String?  @db.Uuid
+  fee_category_id   String?  @db.Uuid
+  amount_paid       Decimal  @db.Decimal(12, 2)
+  payment_date      DateTime @default(now())
+  payment_method    String   @default("cash") // cash, transfer, gateway
+  payment_channel   String?
   xendit_invoice_id String?
-  status          String   @default("pending") // pending, success, failed
-  evidence_url    String?
-  platform_fee    Decimal  @default(0) @db.Decimal(12,2)
-  surcharge_fee   Decimal  @default(0) @db.Decimal(12,2)
-  xendit_fee      Decimal  @default(0) @db.Decimal(12,2)
-  net_amount      Decimal  @default(0) @db.Decimal(12,2)
-  created_at      DateTime @default(now())
-  updated_at      DateTime @updatedAt
+  status            String   @default("pending") // pending, success, failed
+  evidence_url      String?
+  platform_fee      Decimal  @default(0) @db.Decimal(12, 2)
+  surcharge_fee     Decimal  @default(0) @db.Decimal(12, 2)
+  xendit_fee        Decimal  @default(0) @db.Decimal(12, 2)
+  net_amount        Decimal  @default(0) @db.Decimal(12, 2)
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
 
   pesantren    Pesantren    @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  unit_id      String?      @db.Uuid
+  unit         EducationUnit? @relation(fields: [unit_id], references: [id])
   student      Student      @relation(fields: [student_id], references: [id], onDelete: Cascade)
   bill         Bill?        @relation(fields: [bill_id], references: [id])
   fee_category FeeCategory? @relation(fields: [fee_category_id], references: [id])
@@ -740,19 +810,19 @@ model Transaction {
 //  E-WALLET
 // ═══════════════════════════════════════════════════════════════
 model Wallet {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenant_uuid String   @db.Uuid
-  student_id  String   @unique @db.Uuid
-  balance               Decimal  @default(0) @db.Decimal(12,2)
+  id                    String   @id @default(uuid()) @db.Uuid
+  tenant_uuid           String   @db.Uuid
+  student_id            String   @unique @db.Uuid
+  balance               Decimal  @default(0) @db.Decimal(12, 2)
   pin                   String?
   is_active             Boolean  @default(true)
-  daily_spending_limit  Decimal? @db.Decimal(12,2)  // null = unlimited
-  weekly_spending_limit Decimal? @db.Decimal(12,2)  // null = unlimited
+  daily_spending_limit  Decimal? @db.Decimal(12, 2) // null = unlimited
+  weekly_spending_limit Decimal? @db.Decimal(12, 2) // null = unlimited
   created_at            DateTime @default(now())
   updated_at            DateTime @updatedAt
 
-  pesantren    Pesantren          @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
-  student      Student            @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  pesantren    Pesantren           @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  student      Student             @relation(fields: [student_id], references: [id], onDelete: Cascade)
   transactions WalletTransaction[]
   topup_logs   TopupLog[]
 
@@ -764,10 +834,10 @@ model WalletTransaction {
   id             String   @id @default(uuid()) @db.Uuid
   tenant_uuid    String   @db.Uuid
   wallet_id      String   @db.Uuid
-  type           String   // deposit, withdrawal, transfer_in, transfer_out, payment
-  amount         Decimal  @db.Decimal(12,2)
-  balance_before Decimal  @db.Decimal(12,2)
-  balance_after  Decimal  @db.Decimal(12,2)
+  type           String // deposit, withdrawal, transfer_in, transfer_out, payment
+  amount         Decimal  @db.Decimal(12, 2)
+  balance_before Decimal  @db.Decimal(12, 2)
+  balance_after  Decimal  @db.Decimal(12, 2)
   reference      String?
   description    String?
   created_at     DateTime @default(now())
@@ -783,11 +853,11 @@ model WalletTransaction {
 model TenantWallet {
   id          String   @id @default(uuid()) @db.Uuid
   tenant_uuid String   @unique @db.Uuid
-  balance     Decimal  @default(0) @db.Decimal(12,2)
+  balance     Decimal  @default(0) @db.Decimal(12, 2)
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 
-  pesantren   Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
 
   @@map("tenant_wallets")
 }
@@ -795,10 +865,10 @@ model TenantWallet {
 model TenantWalletTransaction {
   id             String   @id @default(uuid()) @db.Uuid
   tenant_uuid    String   @db.Uuid
-  type           String   // deposit_from_superadmin, withdraw_to_superadmin, student_topup, student_withdraw
-  amount         Decimal  @db.Decimal(12,2)
-  balance_before Decimal  @db.Decimal(12,2)
-  balance_after  Decimal  @db.Decimal(12,2)
+  type           String // deposit_from_superadmin, withdraw_to_superadmin, student_topup, student_withdraw
+  amount         Decimal  @db.Decimal(12, 2)
+  balance_before Decimal  @db.Decimal(12, 2)
+  balance_after  Decimal  @db.Decimal(12, 2)
   reference      String?
   description    String?
   created_at     DateTime @default(now())
@@ -810,20 +880,20 @@ model TenantWalletTransaction {
 }
 
 model TopupLog {
-  id          String    @id @default(uuid()) @db.Uuid
-  tenant_uuid String    @db.Uuid
-  wallet_id   String    @db.Uuid
-  external_id String    @unique
-  xendit_id   String?
-  amount      Decimal   @db.Decimal(12,2)
-  status      String    @default("pending") // pending, success, failed, pending_bill
-  notes       String?
-  paid_at     DateTime?
-  platform_fee Decimal   @default(0) @db.Decimal(12,2)
-  surcharge_fee Decimal   @default(0) @db.Decimal(12,2)
-  xendit_fee    Decimal   @default(0) @db.Decimal(12,2)
-  net_amount    Decimal   @default(0) @db.Decimal(12,2)
-  created_at  DateTime  @default(now())
+  id            String    @id @default(uuid()) @db.Uuid
+  tenant_uuid   String    @db.Uuid
+  wallet_id     String    @db.Uuid
+  external_id   String    @unique
+  xendit_id     String?
+  amount        Decimal   @db.Decimal(12, 2)
+  status        String    @default("pending") // pending, success, failed, pending_bill
+  notes         String?
+  paid_at       DateTime?
+  platform_fee  Decimal   @default(0) @db.Decimal(12, 2)
+  surcharge_fee Decimal   @default(0) @db.Decimal(12, 2)
+  xendit_fee    Decimal   @default(0) @db.Decimal(12, 2)
+  net_amount    Decimal   @default(0) @db.Decimal(12, 2)
+  created_at    DateTime  @default(now())
 
   pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
   wallet    Wallet    @relation(fields: [wallet_id], references: [id], onDelete: Cascade)
@@ -836,16 +906,16 @@ model TopupLog {
 //  PAYROLL
 // ═══════════════════════════════════════════════════════════════
 model Payroll {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenant_uuid String   @db.Uuid
-  period      String   // 2026-01
-  status      String   @default("draft") // draft, approved, paid
-  total_amount Decimal @default(0) @db.Decimal(12,2)
-  approved_by String?  @db.Uuid
-  paid_at     DateTime?
-  notes       String?
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
+  id           String    @id @default(uuid()) @db.Uuid
+  tenant_uuid  String    @db.Uuid
+  period       String // 2026-01
+  status       String    @default("draft") // draft, approved, paid
+  total_amount Decimal   @default(0) @db.Decimal(12, 2)
+  approved_by  String?   @db.Uuid
+  paid_at      DateTime?
+  notes        String?
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
 
   pesantren Pesantren     @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
   items     PayrollItem[]
@@ -856,18 +926,18 @@ model Payroll {
 }
 
 model PayrollItem {
-  id           String   @id @default(uuid()) @db.Uuid
-  tenant_uuid  String   @db.Uuid
-  payroll_id   String   @db.Uuid
-  user_id      String   @db.Uuid
-  teacher_id   String?  @db.Uuid
-  base_salary  Decimal  @db.Decimal(12,2)
-  allowances   Decimal  @default(0) @db.Decimal(12,2)
-  deductions   Decimal  @default(0) @db.Decimal(12,2)
-  total        Decimal  @db.Decimal(12,2)
-  notes        String?
-  created_at   DateTime @default(now())
-  updated_at   DateTime @updatedAt
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_uuid String   @db.Uuid
+  payroll_id  String   @db.Uuid
+  user_id     String   @db.Uuid
+  teacher_id  String?  @db.Uuid
+  base_salary Decimal  @db.Decimal(12, 2)
+  allowances  Decimal  @default(0) @db.Decimal(12, 2)
+  deductions  Decimal  @default(0) @db.Decimal(12, 2)
+  total       Decimal  @db.Decimal(12, 2)
+  notes       String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
 
   pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
   payroll   Payroll   @relation(fields: [payroll_id], references: [id], onDelete: Cascade)
@@ -898,16 +968,16 @@ model Setting {
 }
 
 model Post {
-  id              String   @id @default(uuid()) @db.Uuid
-  tenant_uuid     String   @db.Uuid
-  title           String
-  content         String?  @db.Text
-  image_url       String?
-  video_url       String?  // YouTube, IG, TikTok, etc.
-  type            String   @default("announcement") // announcement, news, event, pengajian, kesantrian
-  is_published    Boolean  @default(false)
-  created_at      DateTime @default(now())
-  updated_at      DateTime @updatedAt
+  id           String   @id @default(uuid()) @db.Uuid
+  tenant_uuid  String   @db.Uuid
+  title        String
+  content      String?  @db.Text
+  image_url    String?
+  video_url    String? // YouTube, IG, TikTok, etc.
+  type         String   @default("announcement") // announcement, news, event, pengajian, kesantrian
+  is_published Boolean  @default(false)
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
 
   pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
 
@@ -918,7 +988,7 @@ model Post {
 model SaasInvoice {
   id          String    @id @default(uuid()) @db.Uuid
   tenant_uuid String    @db.Uuid
-  amount      Decimal   @db.Decimal(12,2)
+  amount      Decimal   @db.Decimal(12, 2)
   period      String
   status      String    @default("unpaid") // unpaid, paid, overdue
   due_date    DateTime  @db.Date
@@ -946,10 +1016,12 @@ model UsageLog {
   @@index([tenant_uuid])
   @@map("usage_logs")
 }
+
 model GlobalConfig {
   id    String @id @default(uuid()) @db.Uuid
   key   String @unique
   value String
+
   @@map("global_configs")
 }
 
@@ -959,6 +1031,7 @@ model GlobalConfig {
 model QuestionBank {
   id          String   @id @default(uuid()) @db.Uuid
   tenant_uuid String   @db.Uuid
+  unit_id     String?  @db.Uuid
   subject_id  String   @db.Uuid
   teacher_id  String   @db.Uuid
   kitab_id    String?  @db.Uuid
@@ -967,11 +1040,12 @@ model QuestionBank {
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 
-  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
-  subject   Subject   @relation(fields: [subject_id], references: [id])
-  teacher   Teacher   @relation(fields: [teacher_id], references: [id])
-  kitab     Kitab?    @relation(fields: [kitab_id], references: [id])
-  questions Question[]
+  pesantren      Pesantren      @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  unit           EducationUnit? @relation(fields: [unit_id], references: [id])
+  subject        Subject        @relation(fields: [subject_id], references: [id])
+  teacher        Teacher        @relation(fields: [teacher_id], references: [id])
+  kitab          Kitab?         @relation(fields: [kitab_id], references: [id])
+  questions      Question[]
   exam_schedules ExamSchedule[]
 
   @@index([tenant_uuid])
@@ -981,15 +1055,15 @@ model QuestionBank {
 model Question {
   id               String   @id @default(uuid()) @db.Uuid
   question_bank_id String   @db.Uuid
-  type             String   // multiple_choice, essay
-  content          String   // Question text/HTML
-  options          Json?    // Array of options for multiple choice
-  correct_answer   String?  // The correct option or answer key
+  type             String // multiple_choice, essay
+  content          String // Question text/HTML
+  options          Json? // Array of options for multiple choice
+  correct_answer   String? // The correct option or answer key
   points           Int      @default(10)
   created_at       DateTime @default(now())
   updated_at       DateTime @updatedAt
 
-  question_bank QuestionBank @relation(fields: [question_bank_id], references: [id], onDelete: Cascade)
+  question_bank  QuestionBank   @relation(fields: [question_bank_id], references: [id], onDelete: Cascade)
   exam_questions ExamQuestion[]
 
   @@index([question_bank_id])
@@ -999,9 +1073,10 @@ model Question {
 model Exam {
   id               String   @id @default(uuid()) @db.Uuid
   tenant_uuid      String   @db.Uuid
+  unit_id          String?  @db.Uuid
   academic_year_id String   @db.Uuid
   period_id        String?  @db.Uuid
-  name             String   // UTS, UAS, Ulangan Harian, etc.
+  name             String // UTS, UAS, Ulangan Harian, etc.
   start_date       DateTime
   end_date         DateTime
   status           String   @default("draft") // draft, published, ongoing, finished
@@ -1009,6 +1084,7 @@ model Exam {
   updated_at       DateTime @updatedAt
 
   pesantren     Pesantren       @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  unit          EducationUnit?  @relation(fields: [unit_id], references: [id])
   academic_year AcademicYear    @relation(fields: [academic_year_id], references: [id])
   period        AcademicPeriod? @relation(fields: [period_id], references: [id])
   schedules     ExamSchedule[]
@@ -1034,14 +1110,14 @@ model ExamSchedule {
   created_at       DateTime @default(now())
   updated_at       DateTime @updatedAt
 
-  pesantren     Pesantren     @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
-  exam          Exam          @relation(fields: [exam_id], references: [id], onDelete: Cascade)
-  subject       Subject       @relation(fields: [subject_id], references: [id])
-  question_bank QuestionBank? @relation(fields: [question_bank_id], references: [id])
-  classroom     Classroom     @relation(fields: [classroom_id], references: [id])
-  teacher       Teacher?      @relation("ExamPaperTeacher", fields: [teacher_id], references: [id])
-  supervisor    Teacher?      @relation("ExamSupervisor", fields: [supervisor_id], references: [id])
-  kitab         Kitab?        @relation(fields: [kitab_id], references: [id])
+  pesantren     Pesantren      @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  exam          Exam           @relation(fields: [exam_id], references: [id], onDelete: Cascade)
+  subject       Subject        @relation(fields: [subject_id], references: [id])
+  question_bank QuestionBank?  @relation(fields: [question_bank_id], references: [id])
+  classroom     Classroom      @relation(fields: [classroom_id], references: [id])
+  teacher       Teacher?       @relation("ExamPaperTeacher", fields: [teacher_id], references: [id])
+  supervisor    Teacher?       @relation("ExamSupervisor", fields: [supervisor_id], references: [id])
+  kitab         Kitab?         @relation(fields: [kitab_id], references: [id])
   results       ExamResult[]
   questions     ExamQuestion[]
 
@@ -1054,8 +1130,8 @@ model ExamResult {
   tenant_uuid      String   @db.Uuid
   exam_schedule_id String   @db.Uuid
   student_id       String   @db.Uuid
-  score            Decimal  @db.Decimal(5,2)
-  answers          Json?    // Student's answers
+  score            Decimal  @db.Decimal(5, 2)
+  answers          Json? // Student's answers
   notes            String?
   created_at       DateTime @default(now())
   updated_at       DateTime @updatedAt
@@ -1070,13 +1146,13 @@ model ExamResult {
 }
 
 model ExamQuestion {
-  id               String   @id @default(uuid()) @db.Uuid
-  exam_schedule_id String   @db.Uuid
-  question_id      String   @db.Uuid
-  order            Int      @default(0)
+  id               String @id @default(uuid()) @db.Uuid
+  exam_schedule_id String @db.Uuid
+  question_id      String @db.Uuid
+  order            Int    @default(0)
 
-  exam_schedule    ExamSchedule @relation(fields: [exam_schedule_id], references: [id], onDelete: Cascade)
-  question         Question     @relation(fields: [question_id], references: [id], onDelete: Cascade)
+  exam_schedule ExamSchedule @relation(fields: [exam_schedule_id], references: [id], onDelete: Cascade)
+  question      Question     @relation(fields: [question_id], references: [id], onDelete: Cascade)
 
   @@unique([exam_schedule_id, question_id])
   @@map("exam_questions")
@@ -1089,24 +1165,24 @@ model ReportCard {
   academic_year_id String   @db.Uuid
   period_id        String?  @db.Uuid
   classroom_id     String   @db.Uuid
-  total_score      Decimal? @db.Decimal(8,2)
-  average_score    Decimal? @db.Decimal(5,2)
+  total_score      Decimal? @db.Decimal(8, 2)
+  average_score    Decimal? @db.Decimal(5, 2)
   rank             Int?
   notes_homeroom   String?
-  traits           Json?    // { discipline: 'A', neatness: 'A', ... }
+  traits           Json? // { discipline: 'A', neatness: 'A', ... }
   attendance_sick  Int      @default(0)
   attendance_izin  Int      @default(0)
   attendance_alpa  Int      @default(0)
-  promotion_status String?  // Naik Kelas, Tinggal Kelas, etc
+  promotion_status String? // Naik Kelas, Tinggal Kelas, etc
   status           String   @default("draft") // draft, published
   created_at       DateTime @default(now())
   updated_at       DateTime @updatedAt
 
-  pesantren     Pesantren       @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
-  student       Student         @relation(fields: [student_id], references: [id], onDelete: Cascade)
-  academic_year AcademicYear    @relation(fields: [academic_year_id], references: [id])
-  period        AcademicPeriod? @relation(fields: [period_id], references: [id])
-  classroom     Classroom       @relation(fields: [classroom_id], references: [id])
+  pesantren     Pesantren          @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  student       Student            @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  academic_year AcademicYear       @relation(fields: [academic_year_id], references: [id])
+  period        AcademicPeriod?    @relation(fields: [period_id], references: [id])
+  classroom     Classroom          @relation(fields: [classroom_id], references: [id])
   details       ReportCardDetail[]
 
   @@unique([student_id, academic_year_id, period_id])
@@ -1118,8 +1194,8 @@ model ReportCardDetail {
   id             String   @id @default(uuid()) @db.Uuid
   report_card_id String   @db.Uuid
   subject_id     String   @db.Uuid
-  score          Decimal  @db.Decimal(5,2)
-  predicate      String?  // A, B, C, D
+  score          Decimal  @db.Decimal(5, 2)
+  predicate      String? // A, B, C, D
   notes          String?
   created_at     DateTime @default(now())
   updated_at     DateTime @updatedAt
@@ -1131,38 +1207,37 @@ model ReportCardDetail {
   @@map("report_card_details")
 }
 
-
 model DonationDisbursement {
-  id              String   @id @default(uuid()) @db.Uuid
-  tenant_uuid     String   @db.Uuid
-  fee_category_id String   @db.Uuid
-  amount          Decimal  @db.Decimal(12,2)
+  id                String   @id @default(uuid()) @db.Uuid
+  tenant_uuid       String   @db.Uuid
+  fee_category_id   String   @db.Uuid
+  amount            Decimal  @db.Decimal(12, 2)
   disbursement_date DateTime @default(now())
-  recipient       String?
-  description     String?
-  status          String   @default("success") // success, cancelled
-  created_at      DateTime @default(now())
-  updated_at      DateTime @updatedAt
+  recipient         String?
+  description       String?
+  status            String   @default("success") // success, cancelled
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
 
-  pesantren    Pesantren    @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
-  fee_category FeeCategory  @relation(fields: [fee_category_id], references: [id])
+  pesantren    Pesantren   @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  fee_category FeeCategory @relation(fields: [fee_category_id], references: [id])
 
   @@index([tenant_uuid])
   @@map("donation_disbursements")
 }
 
 model TeacherAttendance {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenant_uuid String   @db.Uuid
-  teacher_id  String   @db.Uuid
-  schedule_id String?  @db.Uuid
-  date        DateTime @db.Date
-  status      String   // hadir, izin, sakit, alpha
+  id          String    @id @default(uuid()) @db.Uuid
+  tenant_uuid String    @db.Uuid
+  teacher_id  String    @db.Uuid
+  schedule_id String?   @db.Uuid
+  date        DateTime  @db.Date
+  status      String // hadir, izin, sakit, alpha
   check_in    DateTime?
   check_out   DateTime?
   notes       String?
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
 
   pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
   teacher   Teacher   @relation(fields: [teacher_id], references: [id], onDelete: Cascade)
@@ -1175,17 +1250,17 @@ model TeacherAttendance {
 }
 
 model TeachingJournal {
-  id           String   @id @default(uuid()) @db.Uuid
-  tenant_uuid  String   @db.Uuid
-  teacher_id   String   @db.Uuid
-  schedule_id  String   @db.Uuid
-  date         DateTime @db.Date
-  material     String   
-  topic        String?
-  student_count Int     @default(0) 
-  notes        String?
-  created_at   DateTime @default(now())
-  updated_at   DateTime @updatedAt
+  id            String   @id @default(uuid()) @db.Uuid
+  tenant_uuid   String   @db.Uuid
+  teacher_id    String   @db.Uuid
+  schedule_id   String   @db.Uuid
+  date          DateTime @db.Date
+  material      String
+  topic         String?
+  student_count Int      @default(0)
+  notes         String?
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
 
   pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
   teacher   Teacher   @relation(fields: [teacher_id], references: [id], onDelete: Cascade)
@@ -1211,7 +1286,7 @@ model StudentHistory {
   id          String   @id @default(uuid()) @db.Uuid
   tenant_uuid String   @db.Uuid
   student_id  String   @db.Uuid
-  type        String   // STATUS, CLASSROOM, DORMITORY, ROOM
+  type        String // STATUS, CLASSROOM, DORMITORY, ROOM
   from_value  String?
   to_value    String?
   notes       String?
@@ -1225,8 +1300,6 @@ model StudentHistory {
   @@map("student_history")
 }
 
-
-
 model DailyAssignment {
   id           String   @id @default(uuid()) @db.Uuid
   tenant_uuid  String   @db.Uuid
@@ -1238,10 +1311,10 @@ model DailyAssignment {
   created_at   DateTime @default(now())
   updated_at   DateTime @updatedAt
 
-  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
-  teacher   Teacher   @relation(fields: [teacher_id], references: [id])
-  subject   Subject   @relation(fields: [subject_id], references: [id])
-  classroom Classroom @relation(fields: [classroom_id], references: [id])
+  pesantren Pesantren         @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  teacher   Teacher           @relation(fields: [teacher_id], references: [id])
+  subject   Subject           @relation(fields: [subject_id], references: [id])
+  classroom Classroom         @relation(fields: [classroom_id], references: [id])
   grades    AssignmentGrade[]
 
   @@index([tenant_uuid])
@@ -1253,7 +1326,7 @@ model AssignmentGrade {
   tenant_uuid         String   @db.Uuid
   daily_assignment_id String   @db.Uuid
   student_id          String   @db.Uuid
-  score               Decimal  @db.Decimal(5,2)
+  score               Decimal  @db.Decimal(5, 2)
   notes               String?
   created_at          DateTime @default(now())
   updated_at          DateTime @updatedAt
@@ -1268,19 +1341,19 @@ model AssignmentGrade {
 }
 
 model Expenditure {
-  id              String   @id @default(uuid()) @db.Uuid
-  tenant_uuid     String   @db.Uuid
-  title           String
-  amount          Decimal  @db.Decimal(12,2)
-  date            DateTime @default(now())
-  category        String?  // Utilities, Maintenance, Food, Payroll, etc.
-  description     String?
-  payment_method  String   @default("cash") // cash, bank_transfer, etc.
-  attachment_url  String?
-  created_at      DateTime @default(now())
-  updated_at      DateTime @updatedAt
+  id             String   @id @default(uuid()) @db.Uuid
+  tenant_uuid    String   @db.Uuid
+  title          String
+  amount         Decimal  @db.Decimal(12, 2)
+  date           DateTime @default(now())
+  category       String? // Utilities, Maintenance, Food, Payroll, etc.
+  description    String?
+  payment_method String   @default("cash") // cash, bank_transfer, etc.
+  attachment_url String?
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
 
-  pesantren       Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
 
   @@index([tenant_uuid])
   @@map("expenditures")
@@ -1290,8 +1363,8 @@ model UserActivity {
   id          String   @id @default(uuid()) @db.Uuid
   tenant_uuid String?  @db.Uuid
   user_id     String   @db.Uuid
-  action      String   // LOGIN, LOGOUT, CREATE, UPDATE, DELETE
-  entity      String?  // SANTRI, TEACHER, BILL, etc.
+  action      String // LOGIN, LOGOUT, CREATE, UPDATE, DELETE
+  entity      String? // SANTRI, TEACHER, BILL, etc.
   entity_id   String?
   description String?
   ip_address  String?
@@ -1299,8 +1372,8 @@ model UserActivity {
   location    String?
   created_at  DateTime @default(now())
 
-  pesantren   Pesantren? @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
-  user        User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  pesantren Pesantren? @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  user      User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@index([tenant_uuid])
   @@index([user_id])
@@ -1308,21 +1381,21 @@ model UserActivity {
 }
 
 model ProblemTicket {
-  id              String   @id @default(uuid()) @db.Uuid
-  tenant_uuid     String   @db.Uuid
-  creator_id      String   @db.Uuid
-  title           String
-  description     String   @db.Text
-  category        String   // general, technical
-  priority        String   @default("medium") // low, medium, high, urgent
-  status          String   @default("open") // open, in_progress, resolved, closed
-  
-  created_at      DateTime @default(now())
-  updated_at      DateTime @updatedAt
-  
-  pesantren       Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
-  creator         User      @relation("TicketCreator", fields: [creator_id], references: [id])
-  messages        ProblemTicketMessage[]
+  id          String @id @default(uuid()) @db.Uuid
+  tenant_uuid String @db.Uuid
+  creator_id  String @db.Uuid
+  title       String
+  description String @db.Text
+  category    String // general, technical
+  priority    String @default("medium") // low, medium, high, urgent
+  status      String @default("open") // open, in_progress, resolved, closed
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  pesantren Pesantren              @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  creator   User                   @relation("TicketCreator", fields: [creator_id], references: [id])
+  messages  ProblemTicketMessage[]
 
   @@index([tenant_uuid])
   @@index([creator_id])
@@ -1330,16 +1403,16 @@ model ProblemTicket {
 }
 
 model ProblemTicketMessage {
-  id              String   @id @default(uuid()) @db.Uuid
-  ticket_id       String   @db.Uuid
-  sender_id       String   @db.Uuid
-  message         String   @db.Text
-  attachment_url  String?
-  
-  created_at      DateTime @default(now())
-  
-  ticket          ProblemTicket @relation(fields: [ticket_id], references: [id], onDelete: Cascade)
-  sender          User          @relation(fields: [sender_id], references: [id])
+  id             String  @id @default(uuid()) @db.Uuid
+  ticket_id      String  @db.Uuid
+  sender_id      String  @db.Uuid
+  message        String  @db.Text
+  attachment_url String?
+
+  created_at DateTime @default(now())
+
+  ticket ProblemTicket @relation(fields: [ticket_id], references: [id], onDelete: Cascade)
+  sender User          @relation(fields: [sender_id], references: [id])
 
   @@index([ticket_id])
   @@index([sender_id])
@@ -1354,25 +1427,25 @@ model ProblemTicketMessage {
 model KoperasiOutlet {
   id          String   @id @default(uuid()) @db.Uuid
   tenant_uuid String   @db.Uuid
-  name        String   // "Kantin Putra", "Koperasi Utama"
-  code        String?  // KOP-01
+  name        String // "Kantin Putra", "Koperasi Utama"
+  code        String? // KOP-01
   address     String?
   phone       String?
   is_active   Boolean  @default(true)
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 
-  pesantren       Pesantren          @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  pesantren       Pesantren       @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
   products        Product[]
   pos_sessions    PosSession[]
   pos_orders      PosOrder[]
   stock_movements StockMovement[]
   stock_opnames   StockOpname[]
   promotions      Promotion[]
-  
+
   product_categories ProductCategory[]
   product_units      ProductUnit[]
-  assigned_users  User[] @relation("UserOutlet")
+  assigned_users     User[]            @relation("UserOutlet")
 
   @@unique([tenant_uuid, name])
   @@index([tenant_uuid])
@@ -1391,7 +1464,7 @@ model ProductCategory {
   updated_at  DateTime @updatedAt
 
   pesantren Pesantren       @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
-  outlet    KoperasiOutlet?  @relation(fields: [outlet_id], references: [id])
+  outlet    KoperasiOutlet? @relation(fields: [outlet_id], references: [id])
   products  Product[]
 
   @@unique([tenant_uuid, outlet_id, name])
@@ -1404,12 +1477,12 @@ model ProductUnit {
   id          String   @id @default(uuid()) @db.Uuid
   tenant_uuid String   @db.Uuid
   outlet_id   String?  @db.Uuid
-  name        String   // pcs, kg, liter, pack, etc.
+  name        String // pcs, kg, liter, pack, etc.
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 
   pesantren Pesantren       @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
-  outlet    KoperasiOutlet?  @relation(fields: [outlet_id], references: [id])
+  outlet    KoperasiOutlet? @relation(fields: [outlet_id], references: [id])
   products  Product[]
 
   @@unique([tenant_uuid, outlet_id, name])
@@ -1419,33 +1492,33 @@ model ProductUnit {
 }
 
 model Product {
-  id              String   @id @default(uuid()) @db.Uuid
-  tenant_uuid     String   @db.Uuid
-  outlet_id       String   @db.Uuid
-  category_id     String?  @db.Uuid
-  unit_id         String?  @db.Uuid
-  name            String
-  sku             String?
-  barcode         String?
-  description     String?
-  price           Decimal  @db.Decimal(12,2)     // Harga jual
-  cost_price      Decimal  @default(0) @db.Decimal(12,2)  // HPP dari supplier
-  margin_percent  Decimal  @default(0) @db.Decimal(5,2)   // Margin % 
-  stock           Int      @default(0)
-  min_stock       Int      @default(5)
-  image_url       String?
-  unit            String   @default("pcs") // pcs, kg, liter, pack (Deprecated in favor of unit_id but kept for compatibility)
-  supplier_name   String?
-  supplier_phone  String?
-  is_active       Boolean  @default(true)
-  track_stock     Boolean  @default(true)
-  created_at      DateTime @default(now())
-  updated_at      DateTime @updatedAt
+  id             String   @id @default(uuid()) @db.Uuid
+  tenant_uuid    String   @db.Uuid
+  outlet_id      String   @db.Uuid
+  category_id    String?  @db.Uuid
+  unit_id        String?  @db.Uuid
+  name           String
+  sku            String?
+  barcode        String?
+  description    String?
+  price          Decimal  @db.Decimal(12, 2) // Harga jual
+  cost_price     Decimal  @default(0) @db.Decimal(12, 2) // HPP dari supplier
+  margin_percent Decimal  @default(0) @db.Decimal(5, 2) // Margin % 
+  stock          Int      @default(0)
+  min_stock      Int      @default(5)
+  image_url      String?
+  unit           String   @default("pcs") // pcs, kg, liter, pack (Deprecated in favor of unit_id but kept for compatibility)
+  supplier_name  String?
+  supplier_phone String?
+  is_active      Boolean  @default(true)
+  track_stock    Boolean  @default(true)
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
 
-  pesantren       Pesantren         @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
-  outlet          KoperasiOutlet    @relation(fields: [outlet_id], references: [id], onDelete: Cascade)
-  category        ProductCategory?  @relation(fields: [category_id], references: [id])
-  product_unit    ProductUnit?      @relation(fields: [unit_id], references: [id])
+  pesantren       Pesantren          @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  outlet          KoperasiOutlet     @relation(fields: [outlet_id], references: [id], onDelete: Cascade)
+  category        ProductCategory?   @relation(fields: [category_id], references: [id])
+  product_unit    ProductUnit?       @relation(fields: [unit_id], references: [id])
   order_items     PosOrderItem[]
   stock_movements StockMovement[]
   opname_items    StockOpnameItem[]
@@ -1461,25 +1534,25 @@ model Product {
 
 // ─── STOCK MANAGEMENT ────────────────────────────────────────
 model StockMovement {
-  id              String   @id @default(uuid()) @db.Uuid
-  tenant_uuid     String   @db.Uuid
-  outlet_id       String   @db.Uuid
-  product_id      String   @db.Uuid
-  type            String   // purchase_in, sale_out, opname_adjust, return, damage, transfer
-  quantity        Int      // positive=in, negative=out
-  cost_price      Decimal? @db.Decimal(12,2) // HPP saat pembelian
-  stock_before    Int
-  stock_after     Int
-  reference       String?  // PO number, order_no, opname_id
-  supplier_name   String?
-  notes           String?
-  created_by      String?  @db.Uuid
-  created_at      DateTime @default(now())
+  id            String   @id @default(uuid()) @db.Uuid
+  tenant_uuid   String   @db.Uuid
+  outlet_id     String   @db.Uuid
+  product_id    String   @db.Uuid
+  type          String // purchase_in, sale_out, opname_adjust, return, damage, transfer
+  quantity      Int // positive=in, negative=out
+  cost_price    Decimal? @db.Decimal(12, 2) // HPP saat pembelian
+  stock_before  Int
+  stock_after   Int
+  reference     String? // PO number, order_no, opname_id
+  supplier_name String?
+  notes         String?
+  created_by    String?  @db.Uuid
+  created_at    DateTime @default(now())
 
-  pesantren Pesantren      @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
-  outlet    KoperasiOutlet @relation(fields: [outlet_id], references: [id], onDelete: Cascade)
-  product   Product        @relation(fields: [product_id], references: [id], onDelete: Cascade)
-  created_by_user User?      @relation(fields: [created_by], references: [id])
+  pesantren       Pesantren      @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  outlet          KoperasiOutlet @relation(fields: [outlet_id], references: [id], onDelete: Cascade)
+  product         Product        @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  created_by_user User?          @relation(fields: [created_by], references: [id])
 
   @@index([tenant_uuid])
   @@index([outlet_id])
@@ -1488,20 +1561,20 @@ model StockMovement {
 }
 
 model StockOpname {
-  id          String    @id @default(uuid()) @db.Uuid
-  tenant_uuid String    @db.Uuid
-  outlet_id   String    @db.Uuid
-  opname_no   String    @unique
-  date        DateTime  @db.Date
-  status      String    @default("draft") // draft, completed, cancelled
-  notes       String?
-  created_by  String?   @db.Uuid
+  id           String    @id @default(uuid()) @db.Uuid
+  tenant_uuid  String    @db.Uuid
+  outlet_id    String    @db.Uuid
+  opname_no    String    @unique
+  date         DateTime  @db.Date
+  status       String    @default("draft") // draft, completed, cancelled
+  notes        String?
+  created_by   String?   @db.Uuid
   completed_at DateTime?
-  created_at  DateTime  @default(now())
-  updated_at  DateTime  @updatedAt
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
 
-  pesantren Pesantren        @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
-  outlet    KoperasiOutlet   @relation(fields: [outlet_id], references: [id], onDelete: Cascade)
+  pesantren Pesantren         @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  outlet    KoperasiOutlet    @relation(fields: [outlet_id], references: [id], onDelete: Cascade)
   items     StockOpnameItem[]
 
   @@index([tenant_uuid])
@@ -1510,13 +1583,13 @@ model StockOpname {
 }
 
 model StockOpnameItem {
-  id             String @id @default(uuid()) @db.Uuid
-  opname_id      String @db.Uuid
-  product_id     String @db.Uuid
-  system_stock   Int    // stok di sistem
-  actual_stock   Int    // stok fisik
-  difference     Int    // actual - system
-  notes          String?
+  id           String  @id @default(uuid()) @db.Uuid
+  opname_id    String  @db.Uuid
+  product_id   String  @db.Uuid
+  system_stock Int // stok di sistem
+  actual_stock Int // stok fisik
+  difference   Int // actual - system
+  notes        String?
 
   opname  StockOpname @relation(fields: [opname_id], references: [id], onDelete: Cascade)
   product Product     @relation(fields: [product_id], references: [id])
@@ -1528,23 +1601,23 @@ model StockOpnameItem {
 
 // ─── PROMOTIONS ──────────────────────────────────────────────
 model Promotion {
-  id              String    @id @default(uuid()) @db.Uuid
-  tenant_uuid     String    @db.Uuid
-  outlet_id       String    @db.Uuid
-  name            String
-  description     String?
-  discount_type   String    // percentage, fixed_amount
-  discount_value  Decimal   @db.Decimal(12,2)
-  min_purchase    Decimal   @default(0) @db.Decimal(12,2)
-  max_discount    Decimal?  @db.Decimal(12,2) // cap for percentage
-  apply_to        String    @default("all") // all, selected_products, category
-  start_date      DateTime
-  end_date        DateTime
-  is_active       Boolean   @default(true)
-  usage_limit     Int?      // null = unlimited
-  usage_count     Int       @default(0)
-  created_at      DateTime  @default(now())
-  updated_at      DateTime  @updatedAt
+  id             String   @id @default(uuid()) @db.Uuid
+  tenant_uuid    String   @db.Uuid
+  outlet_id      String   @db.Uuid
+  name           String
+  description    String?
+  discount_type  String // percentage, fixed_amount
+  discount_value Decimal  @db.Decimal(12, 2)
+  min_purchase   Decimal  @default(0) @db.Decimal(12, 2)
+  max_discount   Decimal? @db.Decimal(12, 2) // cap for percentage
+  apply_to       String   @default("all") // all, selected_products, category
+  start_date     DateTime
+  end_date       DateTime
+  is_active      Boolean  @default(true)
+  usage_limit    Int? // null = unlimited
+  usage_count    Int      @default(0)
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
 
   pesantren Pesantren          @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
   outlet    KoperasiOutlet     @relation(fields: [outlet_id], references: [id], onDelete: Cascade)
@@ -1573,9 +1646,9 @@ model PosSession {
   tenant_uuid     String    @db.Uuid
   outlet_id       String    @db.Uuid
   cashier_id      String    @db.Uuid
-  opening_balance Decimal   @default(0) @db.Decimal(12,2)
-  closing_balance Decimal?  @db.Decimal(12,2)
-  total_sales     Decimal   @default(0) @db.Decimal(12,2)
+  opening_balance Decimal   @default(0) @db.Decimal(12, 2)
+  closing_balance Decimal?  @db.Decimal(12, 2)
+  total_sales     Decimal   @default(0) @db.Decimal(12, 2)
   total_orders    Int       @default(0)
   opened_at       DateTime  @default(now())
   closed_at       DateTime?
@@ -1593,26 +1666,26 @@ model PosSession {
 }
 
 model PosOrder {
-  id              String   @id @default(uuid()) @db.Uuid
-  tenant_uuid     String   @db.Uuid
-  outlet_id       String   @db.Uuid
-  order_no        String   @unique
-  order_type      String   @default("sale") // sale, bill_payment, topup, withdrawal
-  session_id      String?  @db.Uuid
-  student_id      String?  @db.Uuid
-  cashier_id      String   @db.Uuid
-  bill_id         String?  @db.Uuid  // for bill_payment type
-  subtotal        Decimal  @db.Decimal(12,2)
-  discount        Decimal  @default(0) @db.Decimal(12,2)
-  promo_id        String?  @db.Uuid
-  promo_name      String?
-  total           Decimal  @db.Decimal(12,2)
-  payment_method  String   @default("wallet") // wallet, cash
-  wallet_tx_ref   String?
-  status          String   @default("completed") // completed, cancelled, refunded
-  notes           String?
-  created_at      DateTime @default(now())
-  updated_at      DateTime @updatedAt
+  id             String   @id @default(uuid()) @db.Uuid
+  tenant_uuid    String   @db.Uuid
+  outlet_id      String   @db.Uuid
+  order_no       String   @unique
+  order_type     String   @default("sale") // sale, bill_payment, topup, withdrawal
+  session_id     String?  @db.Uuid
+  student_id     String?  @db.Uuid
+  cashier_id     String   @db.Uuid
+  bill_id        String?  @db.Uuid // for bill_payment type
+  subtotal       Decimal  @db.Decimal(12, 2)
+  discount       Decimal  @default(0) @db.Decimal(12, 2)
+  promo_id       String?  @db.Uuid
+  promo_name     String?
+  total          Decimal  @db.Decimal(12, 2)
+  payment_method String   @default("wallet") // wallet, cash
+  wallet_tx_ref  String?
+  status         String   @default("completed") // completed, cancelled, refunded
+  notes          String?
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
 
   pesantren Pesantren      @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
   outlet    KoperasiOutlet @relation(fields: [outlet_id], references: [id], onDelete: Cascade)
@@ -1634,10 +1707,10 @@ model PosOrderItem {
   product_id   String  @db.Uuid
   product_name String
   quantity     Int
-  unit_price   Decimal @db.Decimal(12,2)
-  cost_price   Decimal @default(0) @db.Decimal(12,2) // HPP snapshot
-  discount     Decimal @default(0) @db.Decimal(12,2)
-  subtotal     Decimal @db.Decimal(12,2)
+  unit_price   Decimal @db.Decimal(12, 2)
+  cost_price   Decimal @default(0) @db.Decimal(12, 2) // HPP snapshot
+  discount     Decimal @default(0) @db.Decimal(12, 2)
+  subtotal     Decimal @db.Decimal(12, 2)
 
   order   PosOrder @relation(fields: [order_id], references: [id], onDelete: Cascade)
   product Product  @relation(fields: [product_id], references: [id])
@@ -1649,7 +1722,8 @@ model PosOrderItem {
 model PpdbWave {
   id          String   @id @default(uuid()) @db.Uuid
   tenant_uuid String   @db.Uuid
-  name        String   // e.g., "Gelombang 1", "Jalur Prestasi"
+  unit_ids    String[] @db.Uuid @default([])
+  name        String // e.g., "Gelombang 1", "Jalur Prestasi"
   start_date  DateTime
   end_date    DateTime
   quota       Int      @default(0)
@@ -1657,7 +1731,7 @@ model PpdbWave {
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 
-  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  pesantren Pesantren       @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
   students  Student[]
 
   @@unique([tenant_uuid, name])
@@ -1702,24 +1776,24 @@ model InventoryLocation {
 }
 
 model InventoryItem {
-  id              String   @id @default(uuid()) @db.Uuid
-  tenant_uuid     String   @db.Uuid
-  category_id     String?  @db.Uuid
-  location_id     String?  @db.Uuid
+  id              String    @id @default(uuid()) @db.Uuid
+  tenant_uuid     String    @db.Uuid
+  category_id     String?   @db.Uuid
+  location_id     String?   @db.Uuid
   name            String
-  code            String?  // unique barcode or custom asset code
+  code            String? // unique barcode or custom asset code
   description     String?
-  quantity        Int      @default(1)
-  condition       String   @default("baik") // baik, rusak_ringan, rusak_berat
+  quantity        Int       @default(1)
+  condition       String    @default("baik") // baik, rusak_ringan, rusak_berat
   purchase_date   DateTime?
-  purchase_price  Decimal? @db.Decimal(12,2)
-  source_of_funds String?  // dana bos, donasi, yayasan, dll
-  created_at      DateTime @default(now())
-  updated_at      DateTime @updatedAt
+  purchase_price  Decimal?  @db.Decimal(12, 2)
+  source_of_funds String? // dana bos, donasi, yayasan, dll
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
 
-  pesantren Pesantren          @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
-  category  InventoryCategory? @relation(fields: [category_id], references: [id], onDelete: SetNull)
-  location  InventoryLocation? @relation(fields: [location_id], references: [id], onDelete: SetNull)
+  pesantren Pesantren           @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  category  InventoryCategory?  @relation(fields: [category_id], references: [id], onDelete: SetNull)
+  location  InventoryLocation?  @relation(fields: [location_id], references: [id], onDelete: SetNull)
   mutations InventoryMutation[]
 
   @@unique([tenant_uuid, code])
@@ -1731,11 +1805,11 @@ model InventoryMutation {
   id            String   @id @default(uuid()) @db.Uuid
   tenant_uuid   String   @db.Uuid
   item_id       String   @db.Uuid
-  type          String   // in (pembelian/penambahan), out (rusak/hilang/dibuang), move (pindah lokasi), condition_change (perubahan kondisi)
-  quantity      Int      // positive/negative change
+  type          String // in (pembelian/penambahan), out (rusak/hilang/dibuang), move (pindah lokasi), condition_change (perubahan kondisi)
+  quantity      Int // positive/negative change
   from_location String?
   to_location   String?
-  description   String?  // e.g. "Dipindahkan ke Kamar A"
+  description   String? // e.g. "Dipindahkan ke Kamar A"
   created_by    String?  @db.Uuid
   created_at    DateTime @default(now())
 
@@ -1746,7 +1820,6 @@ model InventoryMutation {
   @@index([item_id])
   @@map("inventory_mutations")
 }
-
 
 model TenantWithdrawalRequest {
   id           String   @id @default(uuid()) @db.Uuid
@@ -1767,14 +1840,14 @@ model TenantWithdrawalRequest {
 }
 
 model TenantTopupRequest {
-  id           String    @id @default(uuid()) @db.Uuid
-  tenant_uuid  String    @db.Uuid
-  amount       Decimal   @db.Decimal(12, 2)
-  proof_url    String?
-  status       String    @default("pending") // pending, approved, rejected
-  notes        String?
-  created_at   DateTime  @default(now())
-  updated_at   DateTime  @updatedAt
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_uuid String   @db.Uuid
+  amount      Decimal  @db.Decimal(12, 2)
+  proof_url   String?
+  status      String   @default("pending") // pending, approved, rejected
+  notes       String?
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
 
   pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
 
@@ -1782,20 +1855,19 @@ model TenantTopupRequest {
   @@map("tenant_topup_requests")
 }
 
-
 model ShalatAttendance {
   id          String   @id @default(uuid()) @db.Uuid
   tenant_uuid String   @db.Uuid
   student_id  String   @db.Uuid
-  shalat_name String   // subuh, dzuhur, ashar, maghrib, isya, dhuha, tahajjud
+  shalat_name String // subuh, dzuhur, ashar, maghrib, isya, dhuha, tahajjud
   date        DateTime @db.Date
-  status      String   // jamaah, munfarid, izin, sakit, alpha, haid
+  status      String // jamaah, munfarid, izin, sakit, alpha, haid
   notes       String?
   created_at  DateTime @default(now())
   updated_at  DateTime @updatedAt
 
-  pesantren Pesantren  @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
-  student   Student    @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  student   Student   @relation(fields: [student_id], references: [id], onDelete: Cascade)
 
   @@unique([student_id, shalat_name, date])
   @@index([tenant_uuid])

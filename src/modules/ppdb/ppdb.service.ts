@@ -1,14 +1,24 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ClsService } from 'nestjs-cls';
 import { CreatePpdbWaveDto, UpdatePpdbWaveDto } from './dto/ppdb-wave.dto';
 
 @Injectable()
 export class PpdbService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cls: ClsService
+  ) {}
 
   async findAll(tenantUuid: string) {
+    const unitId = this.cls.get('unit_id');
+    const whereClause: any = { tenant_uuid: tenantUuid };
+    if (unitId) {
+      whereClause.unit_ids = { has: unitId };
+    }
+    
     return this.prisma.ppdbWave.findMany({
-      where: { tenant_uuid: tenantUuid },
+      where: whereClause,
       orderBy: { start_date: 'asc' },
       include: {
         _count: {
@@ -19,8 +29,14 @@ export class PpdbService {
   }
 
   async findOne(id: string, tenantUuid: string) {
+    const unitId = this.cls.get('unit_id');
+    const whereClause: any = { id, tenant_uuid: tenantUuid };
+    if (unitId) {
+      whereClause.unit_ids = { has: unitId };
+    }
+
     const wave = await this.prisma.ppdbWave.findFirst({
-      where: { id, tenant_uuid: tenantUuid },
+      where: whereClause,
       include: {
         _count: {
           select: { students: true }
@@ -32,10 +48,12 @@ export class PpdbService {
   }
 
   async create(tenantUuid: string, dto: CreatePpdbWaveDto) {
+    const unitId = this.cls.get('unit_id');
     return this.prisma.ppdbWave.create({
       data: {
         ...dto,
         tenant_uuid: tenantUuid,
+        unit_ids: unitId ? [unitId] : (dto.unit_ids || []),
         start_date: new Date(dto.start_date),
         end_date: new Date(dto.end_date),
       },
@@ -68,6 +86,14 @@ export class PpdbService {
   }
 
   async togglePpdbStatus(tenantUuid: string, isActive: boolean) {
+    const unitId = this.cls.get('unit_id');
+    if (unitId) {
+      return this.prisma.educationUnit.update({
+        where: { id: unitId },
+        data: { ppdb_is_active: isActive },
+      });
+    }
+
     return this.prisma.pesantren.update({
       where: { id: tenantUuid },
       data: { ppdb_is_active: isActive },
@@ -75,6 +101,15 @@ export class PpdbService {
   }
 
   async getPpdbStatus(tenantUuid: string) {
+    const unitId = this.cls.get('unit_id');
+    if (unitId) {
+      const unit = await this.prisma.educationUnit.findUnique({
+        where: { id: unitId },
+        select: { ppdb_is_active: true }
+      });
+      return { is_active: unit?.ppdb_is_active || false };
+    }
+
     const pesantren = await this.prisma.pesantren.findUnique({
       where: { id: tenantUuid },
       select: { ppdb_is_active: true },

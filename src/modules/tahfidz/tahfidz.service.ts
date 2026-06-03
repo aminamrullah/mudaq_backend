@@ -1,10 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ClsService } from 'nestjs-cls';
 import { CreateTahfidzRecordDto, UpdateTahfidzRecordDto } from './dto/tahfidz.dto';
 
 @Injectable()
 export class TahfidzService {
-  constructor(private prisma: PrismaService) { }
+  constructor(
+    private prisma: PrismaService,
+    private cls: ClsService
+  ) { }
 
   async getRecords(tenantId: string, filters: any, userId?: string, role?: string) {
     const { student_id, category, start_date, end_date } = filters;
@@ -42,6 +46,11 @@ export class TahfidzService {
         gte: new Date(start_date),
         lte: new Date(end_date),
       };
+    }
+
+    const unitId = this.cls.get('unit_id');
+    if (unitId) {
+      where.student = { ...where.student, unit_id: unitId };
     }
 
     return this.prisma.tahfidzRecord.findMany({

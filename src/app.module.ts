@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ClsModule } from 'nestjs-cls';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -32,9 +33,14 @@ import { APP_GUARD } from '@nestjs/core';
 import { PpdbModule } from './modules/ppdb/ppdb.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { ShalatAttendanceModule } from './modules/shalat-attendance/shalat-attendance.module';
+import { EducationUnitModule } from './modules/education-unit/education-unit.module';
 
 @Module({
   imports: [
+    ClsModule.forRoot({
+      global: true,
+      middleware: { mount: true },
+    }),
     ConfigModule.forRoot({ isGlobal: true }),
     ThrottlerModule.forRoot([
       {
@@ -74,6 +80,7 @@ import { ShalatAttendanceModule } from './modules/shalat-attendance/shalat-atten
     PpdbModule,
     InventoryModule,
     ShalatAttendanceModule,
+    EducationUnitModule,
   ],
   providers: [
     {

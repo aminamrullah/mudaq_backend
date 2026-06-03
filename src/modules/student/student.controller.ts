@@ -37,7 +37,7 @@ export class StudentController {
   constructor(private readonly studentService: StudentService) {}
 
   @Post()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN, Role.ADMIN_UNIT)
   @ApiOperation({ summary: 'Create santri' })
   create(@CurrentUser('tenant_uuid') t: string, @Body() dto: CreateStudentDto) {
     return this.studentService.create(t, dto);
@@ -71,8 +71,35 @@ export class StudentController {
     res.send(buffer);
   }
 
+  @Get('search-global')
+  @Roles(Role.ADMIN_PESANTREN, Role.ADMIN_UNIT)
+  @ApiOperation({ summary: 'Search students across all units in tenant' })
+  @ApiQuery({ name: 'search', required: false })
+  @ApiQuery({ name: 'unit_id', required: false })
+  @ApiQuery({ name: 'classroom_id', required: false })
+  @ApiQuery({ name: 'status', required: false })
+  searchGlobal(
+    @CurrentUser('tenant_uuid') t: string,
+    @Query('search') s?: string,
+    @Query('unit_id') u?: string,
+    @Query('classroom_id') c?: string,
+    @Query('status') st?: string,
+  ) {
+    return this.studentService.searchGlobal(t, s, u, c, st);
+  }
+
+  @Post(':id/clone')
+  @Roles(Role.ADMIN_PESANTREN, Role.ADMIN_UNIT)
+  @ApiOperation({ summary: 'Clone a student to current unit' })
+  cloneToUnit(
+    @CurrentUser('tenant_uuid') t: string,
+    @Param('id') id: string,
+  ) {
+    return this.studentService.cloneToUnit(t, id);
+  }
+
   @Get()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN, Role.STAFF_PESANTREN, Role.USTAD, Role.KEPALA_KOPERASI, Role.STAF_KOPERASI)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN, Role.STAFF_PESANTREN, Role.USTAD, Role.ADMIN_UNIT, Role.KEPALA_KOPERASI, Role.STAF_KOPERASI)
   @ApiOperation({ summary: 'List santri' })
   @ApiQuery({ name: 'search', required: false })
   @ApiQuery({ name: 'status', required: false })
@@ -105,14 +132,14 @@ export class StudentController {
   }
 
   @Get(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN, Role.STAFF_PESANTREN, Role.USTAD, Role.KEPALA_KOPERASI, Role.STAF_KOPERASI)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN, Role.STAFF_PESANTREN, Role.USTAD, Role.ADMIN_UNIT, Role.KEPALA_KOPERASI, Role.STAF_KOPERASI)
   @ApiOperation({ summary: 'Get santri detail' })
   findOne(@CurrentUser('tenant_uuid') t: string, @Param('id') id: string) {
     return this.studentService.findOne(t, id);
   }
 
   @Put(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN, Role.ADMIN_UNIT)
   update(
     @CurrentUser('tenant_uuid') t: string,
     @Param('id') id: string,
@@ -181,7 +208,7 @@ export class StudentController {
   }
 
   @Post(':id/tahfidz')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN, Role.USTAD)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN, Role.USTAD, Role.ADMIN_UNIT)
   createTahfidz(@CurrentUser('tenant_uuid') t: string, @Param('id') id: string, @Body() body: any) {
     return this.studentService.createTahfidzRecord(t, id, body);
   }

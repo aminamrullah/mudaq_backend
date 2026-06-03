@@ -17,7 +17,7 @@ export class TahfidzController {
   constructor(private readonly tahfidzService: TahfidzService) { }
 
   @Get()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN, Role.USTAD)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN, Role.USTAD, Role.ADMIN_UNIT)
   @ApiOperation({ summary: 'Get tahfidz records' })
   getRecords(
     @CurrentUser('tenant_uuid') t: string,
@@ -29,7 +29,7 @@ export class TahfidzController {
   }
 
   @Post()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.USTAD)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.USTAD, Role.ADMIN_UNIT)
   @ApiOperation({ summary: 'Create tahfidz record' })
   createRecord(
     @CurrentUser('tenant_uuid') t: string,
@@ -41,7 +41,7 @@ export class TahfidzController {
   }
 
   @Put(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.USTAD)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.USTAD, Role.ADMIN_UNIT)
   @ApiOperation({ summary: 'Update tahfidz record' })
   updateRecord(
     @CurrentUser('tenant_uuid') t: string,
@@ -54,7 +54,7 @@ export class TahfidzController {
   }
 
   @Delete(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.USTAD)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.USTAD, Role.ADMIN_UNIT)
   @ApiOperation({ summary: 'Delete tahfidz record' })
   deleteRecord(
     @CurrentUser('tenant_uuid') t: string,

@@ -36,58 +36,71 @@ export class BillingController {
   constructor(private readonly svc: BillingService) {}
 
   @Post('fee-categories')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN, Role.ADMIN_UNIT)
   @ApiOperation({ summary: 'Create fee category' })
   createFee(
     @CurrentUser('tenant_uuid') t: string,
+    @CurrentUser('unit_id') uid: string,
     @Body() dto: CreateFeeCategoryDto,
   ) {
-    return this.svc.createFeeCategory(t, dto);
+    return this.svc.createFeeCategory(t, uid, dto);
   }
 
   @Get('fee-categories')
   @ApiOperation({ summary: 'List fee categories' })
-  getFees(@CurrentUser('tenant_uuid') t: string) {
-    return this.svc.getFeeCategories(t);
+  getFees(
+    @CurrentUser('tenant_uuid') t: string,
+    @CurrentUser('unit_id') uid: string,
+    @Query('unit_id') queryUid?: string,
+  ) {
+    return this.svc.getFeeCategories(t, uid || queryUid);
   }
 
   @Put('fee-categories/:id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN, Role.ADMIN_UNIT)
   updateFee(
     @CurrentUser('tenant_uuid') t: string,
+    @CurrentUser('unit_id') uid: string,
     @Param('id') id: string,
     @Body() dto: UpdateFeeCategoryDto,
   ) {
-    return this.svc.updateFeeCategory(t, id, dto);
+    return this.svc.updateFeeCategory(t, uid, id, dto);
   }
 
   @Delete('fee-categories/:id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN)
-  deleteFee(@CurrentUser('tenant_uuid') t: string, @Param('id') id: string) {
-    return this.svc.deleteFeeCategory(t, id);
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN, Role.ADMIN_UNIT)
+  deleteFee(
+    @CurrentUser('tenant_uuid') t: string,
+    @CurrentUser('unit_id') uid: string,
+    @Param('id') id: string
+  ) {
+    return this.svc.deleteFeeCategory(t, uid, id);
   }
 
   @Post('generate')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN, Role.ADMIN_UNIT)
   @ApiOperation({ summary: 'Generate bills for students' })
   generate(
     @CurrentUser('tenant_uuid') t: string,
+    @CurrentUser('unit_id') uid: string,
     @Body() dto: GenerateBillsDto,
   ) {
-    return this.svc.generateBills(t, dto);
+    return this.svc.generateBills(t, uid, dto);
   }
 
   @Get('bills')
   @ApiOperation({ summary: 'List bills' })
   getBills(
     @CurrentUser('tenant_uuid') t: string,
+    @CurrentUser('unit_id') uid: string,
     @Query('page') p?: number,
     @Query('limit') l?: number,
     @Query('status') s?: string,
     @Query('student_id') sid?: string,
     @Query('student_status') sst?: string,
+    @Query('unit_id') queryUid?: string,
   ) {
-    return this.svc.getBills(t, p, l, s, sid, sst);
+    return this.svc.getBills(t, uid || queryUid, p, l, s, sid, sst);
   }
 
   @Post('pay')
@@ -135,15 +148,17 @@ export class BillingController {
   }
 
   @Get('transactions')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN, Role.ADMIN_UNIT)
   @ApiOperation({ summary: 'List transactions' })
   getTransactions(
     @CurrentUser('tenant_uuid') t: string,
+    @CurrentUser('unit_id') uid: string,
     @Query('page') p?: number,
     @Query('limit') l?: number,
     @Query('type') type?: string,
+    @Query('unit_id') queryUid?: string,
   ) {
-    return this.svc.getTransactions(t, p, l, type);
+    return this.svc.getTransactions(t, uid || queryUid, p, l, type);
   }
 
   @Post('disbursements')

@@ -75,6 +75,11 @@ export class CreateClassroomDto {
   @Min(1)
   @IsOptional()
   capacity?: number;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  unit_id?: string;
 }
 
 export class UpdateClassroomDto extends PartialType(CreateClassroomDto) {}

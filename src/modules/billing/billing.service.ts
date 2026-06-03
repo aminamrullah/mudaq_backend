@@ -254,20 +254,25 @@ export class BillingService {
   }
 
   // ── Fee Category CRUD ──
-  async createFeeCategory(tenantUuid: string, dto: CreateFeeCategoryDto) {
+  async createFeeCategory(tenantUuid: string, uid: string | undefined, dto: CreateFeeCategoryDto) {
     return this.prisma.feeCategory.create({
       data: {
         ...dto,
         amount: new Prisma.Decimal(dto.amount),
         tenant_uuid: tenantUuid,
+        unit_id: uid || dto.unit_id || null,
       },
     });
   }
 
-  async getFeeCategories(tenantUuid: string) {
+  async getFeeCategories(tenantUuid: string, uid?: string) {
+    const where: any = { tenant_uuid: tenantUuid };
+    if (uid) where.unit_id = uid;
+    
     const categories = await this.prisma.feeCategory.findMany({
-      where: { tenant_uuid: tenantUuid },
+      where,
       orderBy: { name: 'asc' },
+      include: { unit: { select: { name: true } } }
     });
 
     const enriched = await Promise.all(
@@ -306,11 +311,15 @@ export class BillingService {
 
   async updateFeeCategory(
     tenantUuid: string,
+    uid: string | undefined,
     id: string,
     dto: UpdateFeeCategoryDto,
   ) {
+    const where: any = { id, tenant_uuid: tenantUuid };
+    if (uid) where.unit_id = uid;
+    
     const cat = await this.prisma.feeCategory.findFirst({
-      where: { id, tenant_uuid: tenantUuid },
+      where,
     });
     if (!cat) throw new NotFoundException('Kategori biaya tidak ditemukan');
     return this.prisma.feeCategory.update({
@@ -322,9 +331,12 @@ export class BillingService {
     });
   }
 
-  async deleteFeeCategory(tenantUuid: string, id: string) {
+  async deleteFeeCategory(tenantUuid: string, uid: string | undefined, id: string) {
+    const where: any = { id, tenant_uuid: tenantUuid };
+    if (uid) where.unit_id = uid;
+    
     const cat = await this.prisma.feeCategory.findFirst({
-      where: { id, tenant_uuid: tenantUuid },
+      where,
       include: {
         _count: {
           select: { bills: true, transactions: true },
@@ -341,9 +353,12 @@ export class BillingService {
   }
 
   // ── Bills ──
-  async generateBills(tenantUuid: string, dto: GenerateBillsDto) {
+  async generateBills(tenantUuid: string, uid: string | undefined, dto: GenerateBillsDto) {
+    const whereCat: any = { id: dto.fee_category_id, tenant_uuid: tenantUuid };
+    if (uid) whereCat.unit_id = uid;
+    
     const category = await this.prisma.feeCategory.findFirst({
-      where: { id: dto.fee_category_id, tenant_uuid: tenantUuid },
+      where: whereCat,
     });
     if (!category)
       throw new NotFoundException('Kategori biaya tidak ditemukan');
@@ -383,6 +398,7 @@ export class BillingService {
         const bill = await tx.bill.create({
           data: {
             tenant_uuid: tenantUuid,
+            unit_id: category.unit_id,
             student_id: student.id,
             fee_category_id: dto.fee_category_id,
             amount: category.amount,
@@ -419,6 +435,7 @@ export class BillingService {
 
   async getBills(
     tenantUuid: string,
+    uid?: string,
     page = 1,
     limit = 20,
     status?: string,
@@ -426,6 +443,7 @@ export class BillingService {
     studentStatus?: string,
   ) {
     const where: any = { tenant_uuid: tenantUuid };
+    if (uid) where.unit_id = uid;
     if (status) where.status = status;
     if (studentId) where.student_id = studentId;
     if (studentStatus) where.student = { status: studentStatus };
@@ -437,7 +455,8 @@ export class BillingService {
         take: limit,
         include: {
           student: { select: { id: true, name: true, nis: true, parent_phone: true } },
-          fee_category: { select: { id: true, name: true } },
+          fee_category: { select: { id: true, name: true, unit_id: true } },
+          unit: { select: { name: true } }
         },
         orderBy: { due_date: 'desc' },
       }),
@@ -938,8 +957,9 @@ export class BillingService {
     });
   }
 
-  async getTransactions(tenantUuid: string, page = 1, limit = 20, type?: string) {
+  async getTransactions(tenantUuid: string, uid?: string, page = 1, limit = 20, type?: string) {
     const where: any = { tenant_uuid: tenantUuid };
+    if (uid) where.unit_id = uid;
     if (type) {
       where.fee_category = { type };
     }
@@ -951,7 +971,8 @@ export class BillingService {
         take: limit,
         include: {
           student: { select: { name: true, nis: true, status: true } },
-          fee_category: { select: { name: true, type: true } },
+          fee_category: { select: { name: true, type: true, unit_id: true } },
+          unit: { select: { name: true } }
         },
         orderBy: { payment_date: 'desc' },
       }),

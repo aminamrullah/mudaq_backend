@@ -61,6 +61,7 @@ export class CreateStudentDto {
   @ApiProperty({ required: false }) @IsOptional() @IsString() kitab_teacher_id?: string;
   @ApiProperty({ required: false }) @IsOptional() entry_year?: number;
   @ApiProperty({ required: false }) @IsOptional() @IsDateString() graduation_date?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() unit_id?: string;
 
   // Fisik & Pendidikan
   @ApiProperty({ required: false })
@@ -109,6 +110,7 @@ export class CreateStudentDto {
   @IsOptional()
   @IsString()
   file_others?: string;
+
 }
 
 export class UpdateStudentDto extends PartialType(CreateStudentDto) {}

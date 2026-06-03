@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsDateString, IsInt, IsBoolean, Min, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsDateString, IsInt, IsBoolean, Min, IsOptional, IsArray, IsUUID } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreatePpdbWaveDto {
@@ -6,6 +6,12 @@ export class CreatePpdbWaveDto {
   @IsString()
   @IsNotEmpty()
   name: string;
+
+  @ApiProperty({ type: [String], required: false })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  unit_ids?: string[];
 
   @ApiProperty()
   @IsDateString()
@@ -33,6 +39,12 @@ export class UpdatePpdbWaveDto {
   @IsString()
   @IsOptional()
   name?: string;
+
+  @ApiProperty({ type: [String], required: false })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  unit_ids?: string[];
 
   @ApiProperty()
   @IsDateString()

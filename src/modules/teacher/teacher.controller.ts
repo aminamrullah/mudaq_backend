@@ -27,14 +27,14 @@ export class TeacherController {
   constructor(private readonly svc: TeacherService) { }
 
   @Post()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN, Role.ADMIN_UNIT)
   @ApiOperation({ summary: 'Create guru/ustad' })
   create(@CurrentUser('tenant_uuid') t: string, @Body() dto: CreateTeacherDto) {
     return this.svc.create(t, dto);
   }
 
   @Get()
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN, Role.ADMIN_UNIT)
   @ApiOperation({ summary: 'List guru' })
   findAll(
     @CurrentUser('tenant_uuid') t: string,
@@ -43,6 +43,26 @@ export class TeacherController {
     @Query('search') s?: string,
   ) {
     return this.svc.findAll(t, p, l, s);
+  }
+
+  @Get('search-global')
+  @Roles(Role.ADMIN_PESANTREN, Role.ADMIN_UNIT)
+  @ApiOperation({ summary: 'Search teachers across all units in tenant' })
+  searchGlobal(
+    @CurrentUser('tenant_uuid') t: string,
+    @Query('search') s: string,
+  ) {
+    return this.svc.searchGlobal(t, s);
+  }
+
+  @Post(':id/assign-unit')
+  @Roles(Role.ADMIN_PESANTREN, Role.ADMIN_UNIT)
+  @ApiOperation({ summary: 'Assign a teacher to a unit' })
+  assignUnit(
+    @CurrentUser('tenant_uuid') t: string,
+    @Param('id') id: string,
+  ) {
+    return this.svc.assignUnit(t, id);
   }
 
   @Get('profile')
@@ -71,7 +91,7 @@ export class TeacherController {
   }
 
   @Put(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN, Role.ADMIN_UNIT)
   update(
     @CurrentUser('tenant_uuid') t: string,
     @Param('id') id: string,
@@ -81,7 +101,7 @@ export class TeacherController {
   }
 
   @Delete(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN, Role.ADMIN_UNIT)
   remove(@CurrentUser('tenant_uuid') t: string, @Param('id') id: string) {
     return this.svc.remove(t, id);
   }

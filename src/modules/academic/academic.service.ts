@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ClsService } from 'nestjs-cls';
 import {
   CreateAcademicYearDto,
   UpdateAcademicYearDto,
@@ -33,7 +34,10 @@ import {
 
 @Injectable()
 export class AcademicService {
-  constructor(private prisma: PrismaService) { }
+  constructor(
+    private prisma: PrismaService,
+    private cls: ClsService,
+  ) { }
 
   // ==========================================
   // Academic Years
@@ -144,8 +148,12 @@ export class AcademicService {
   // Classrooms
   // ==========================================
   async getClassrooms(tenantId: string) {
+    const unitId = this.cls.get('unit_id');
     return this.prisma.classroom.findMany({
-      where: { tenant_uuid: tenantId },
+      where: { 
+        tenant_uuid: tenantId,
+        ...(unitId ? { unit_id: unitId } : {})
+      },
       include: { homeroom: true, academic_year: true },
     });
   }
@@ -154,6 +162,7 @@ export class AcademicService {
     return this.prisma.classroom.create({
       data: {
         tenant_uuid: tenantId,
+        unit_id: this.cls.get('unit_id') || undefined,
         name: dto.name,
         level: dto.level,
         academic_year_id: dto.academic_year_id || undefined,
@@ -184,8 +193,12 @@ export class AcademicService {
   // Subjects
   // ==========================================
   async getSubjects(tenantId: string) {
+    const unitId = this.cls.get('unit_id');
     return this.prisma.subject.findMany({
-      where: { tenant_uuid: tenantId },
+      where: { 
+        tenant_uuid: tenantId,
+        ...(unitId ? { OR: [{ unit_id: unitId }, { unit_id: null }] } : {})
+      },
       include: { category: true }
     });
   }
@@ -194,6 +207,7 @@ export class AcademicService {
     return this.prisma.subject.create({
       data: {
         tenant_uuid: tenantId,
+        unit_id: this.cls.get('unit_id') || undefined,
         name: dto.name,
         code: dto.code,
         category_id: dto.category_id,
@@ -253,8 +267,12 @@ export class AcademicService {
   // Subject Categories
   // ==========================================
   async getSubjectCategories(tenantId: string) {
+    const unitId = this.cls.get('unit_id');
     return this.prisma.subjectCategory.findMany({
-      where: { tenant_uuid: tenantId },
+      where: { 
+        tenant_uuid: tenantId,
+        ...(unitId ? { OR: [{ unit_id: unitId }, { unit_id: null }] } : {})
+      },
       orderBy: { name: 'asc' }
     });
   }
@@ -263,6 +281,7 @@ export class AcademicService {
     return this.prisma.subjectCategory.create({
       data: {
         tenant_uuid: tenantId,
+        unit_id: this.cls.get('unit_id') || undefined,
         name: dto.name,
         description: dto.description
       }
@@ -378,7 +397,11 @@ export class AcademicService {
   // Question Banks
   // ==========================================
   async getQuestionBanks(tenantId: string, role?: string, userId?: string, subjectId?: string) {
-    const where: any = { tenant_uuid: tenantId };
+    const unitId = this.cls.get('unit_id');
+    const where: any = { 
+      tenant_uuid: tenantId,
+      ...(unitId ? { OR: [{ unit_id: unitId }, { unit_id: null }] } : {})
+    };
 
     if (subjectId) {
       where.subject_id = subjectId;
@@ -422,6 +445,7 @@ export class AcademicService {
     return this.prisma.questionBank.create({
       data: {
         tenant_uuid: tenantId,
+        unit_id: this.cls.get('unit_id') || undefined,
         subject_id: dto.subject_id,
         teacher_id: dto.teacher_id,
         kitab_id: dto.kitab_id,
@@ -484,8 +508,12 @@ export class AcademicService {
   // Exams
   // ==========================================
   async getExams(tenantId: string) {
+    const unitId = this.cls.get('unit_id');
     return this.prisma.exam.findMany({
-      where: { tenant_uuid: tenantId },
+      where: { 
+        tenant_uuid: tenantId,
+        ...(unitId ? { OR: [{ unit_id: unitId }, { unit_id: null }] } : {})
+      },
       include: { academic_year: true, period: true, schedules: true },
     });
   }
@@ -494,6 +522,7 @@ export class AcademicService {
     return this.prisma.exam.create({
       data: {
         tenant_uuid: tenantId,
+        unit_id: this.cls.get('unit_id') || undefined,
         academic_year_id: dto.academic_year_id,
         period_id: dto.period_id,
         name: dto.name,

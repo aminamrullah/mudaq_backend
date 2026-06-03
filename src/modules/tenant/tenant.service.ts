@@ -221,16 +221,39 @@ export class TenantService {
     };
   }
 
+  // Helper for deduplicating multi-unit students (Virtual Grouping)
+  async getUniqueStudentCount(tenantUuid: string, statusFilter?: any) {
+    const where: any = { tenant_uuid: tenantUuid, deleted_at: null };
+    if (statusFilter) {
+      where.status = statusFilter;
+    }
+
+    const students = await this.prisma.student.findMany({
+      where,
+      select: { nik: true, name: true, birth_date: true },
+    });
+
+    const uniqueSet = new Set<string>();
+    for (const s of students) {
+      const key = (s.nik && s.nik.trim() !== '') 
+        ? s.nik 
+        : `${s.name.toLowerCase()}_${s.birth_date ? new Date(s.birth_date).getTime() : ''}`;
+      uniqueSet.add(key);
+    }
+
+    return uniqueSet.size;
+  }
+
   async recordUsage(id: string) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     const stats = await this.prisma.pesantren.findUnique({
       where: { id },
-      include: { _count: { select: { students: true } } },
     });
 
     if (!stats) return;
+    const uniqueCount = await this.getUniqueStudentCount(id);
 
     return this.prisma.usageLog.upsert({
       where: {
@@ -239,18 +262,17 @@ export class TenantService {
           date: today,
         },
       },
-      update: { student_count: stats._count.students },
+      update: { student_count: uniqueCount },
       create: {
         tenant_uuid: id,
         date: today,
-        student_count: stats._count.students,
+        student_count: uniqueCount,
       },
     });
   }
   async generateInvoice(id: string) {
     const tenant = await this.prisma.pesantren.findUnique({
       where: { id },
-      include: { _count: { select: { students: true } } },
     });
 
     if (!tenant) throw new NotFoundException('Pesantren tidak ditemukan');
@@ -265,7 +287,8 @@ export class TenantService {
     if (tenant.billing_type === 'fixed') {
       amount = Number(tenant.fixed_billing_amount);
     } else {
-      amount = Number(tenant.price_per_student) * tenant._count.students;
+      const uniqueCount = await this.getUniqueStudentCount(id);
+      amount = Number(tenant.price_per_student) * uniqueCount;
     }
 
     // If yearly, we might want to multiply by 12 if the price entered was monthly,
@@ -534,13 +557,44 @@ export class TenantService {
   async remove(id: string) {
     const tenant = await this.findOne(id);
     const timestamp = Date.now();
-    return this.prisma.pesantren.update({
-      where: { id },
-      data: { 
-        deleted_at: new Date(),
-        slug: tenant.slug ? `${tenant.slug}-del-${timestamp}` : undefined,
-        domain: tenant.domain ? `${tenant.domain}-del-${timestamp}` : undefined,
-      },
+    
+    // Ambil semua user yang terafiliasi dengan pesantren ini
+    const users = await this.prisma.user.findMany({
+      where: { tenant_uuid: id, deleted_at: null },
+      select: { id: true, phone: true, email: true }
+    });
+
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Hapus (Soft-Delete) Pesantren
+      const deletedTenant = await tx.pesantren.update({
+        where: { id },
+        data: { 
+          deleted_at: new Date(),
+          slug: tenant.slug ? `${tenant.slug}-del-${timestamp}` : undefined,
+          domain: tenant.domain ? `${tenant.domain}-del-${timestamp}` : undefined,
+        },
+      });
+
+      // 2. Hapus (Soft-Delete) semua User terkait
+      for (const user of users) {
+        await tx.user.update({
+          where: { id: user.id },
+          data: {
+            deleted_at: new Date(),
+            is_active: false,
+            phone: user.phone ? `${user.phone}_del_${timestamp}` : null,
+            email: user.email ? `${user.email}_del_${timestamp}` : null,
+          }
+        });
+      }
+
+      // 3. Hapus (Soft-Delete) semua Santri
+      await tx.student.updateMany({
+        where: { tenant_uuid: id, deleted_at: null },
+        data: { deleted_at: new Date() }
+      });
+
+      return deletedTenant;
     });
   }
 

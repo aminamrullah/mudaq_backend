@@ -41,6 +41,32 @@ export class WalisantriService {
     return student;
   }
 
+  // Helper: get all linked student IDs for virtual grouping
+  private async getLinkedStudentIds(student: any) {
+    let whereClause: any = {
+      tenant_uuid: student.tenant_uuid,
+      parent_phone: student.parent_phone,
+      status: { in: ['AKTIF', 'active'] },
+      deleted_at: null
+    };
+
+    if (student.nik && student.nik.trim() !== '') {
+      whereClause.nik = student.nik;
+    } else {
+      whereClause.name = student.name;
+      if (student.birth_date) {
+        whereClause.birth_date = student.birth_date;
+      }
+    }
+
+    const linkedStudents = await this.prisma.student.findMany({
+      where: whereClause,
+      select: { id: true, wallet: true }
+    });
+
+    return linkedStudents.map(s => s.id);
+  }
+
   // ── My Students ──
   async getMyStudents(tenantUuid: string, phone: string) {
     if (!phone || phone.trim() === '') return [];
@@ -69,10 +95,31 @@ export class WalisantriService {
       orderBy: { name: 'asc' },
     });
 
+    // Grouping by NIK or Name+BirthDate
+    const grouped = new Map<string, any>();
+    for (const s of students) {
+      const key = (s.nik && s.nik.trim() !== '') 
+        ? s.nik 
+        : `${s.name.toLowerCase()}_${s.birth_date ? new Date(s.birth_date).getTime() : ''}`;
+
+      if (!grouped.has(key)) {
+        grouped.set(key, { ...s, linked_ids: [s.id] });
+      } else {
+        const existing = grouped.get(key);
+        existing.linked_ids.push(s.id);
+        // Prioritize a student with a wallet over one without
+        if (!existing.wallet && s.wallet) {
+          existing.wallet = s.wallet;
+        }
+      }
+    }
+
+    const groupedStudents = Array.from(grouped.values());
+
     return Promise.all(
-      students.map(async (s) => {
+      groupedStudents.map(async (s) => {
         const totalBills = await this.prisma.bill.aggregate({
-          where: { student_id: s.id, status: { not: 'paid' } },
+          where: { student_id: { in: s.linked_ids }, status: { not: 'paid' } },
           _sum: { amount: true, amount_paid: true },
         });
         const unpaidAmount =
@@ -225,7 +272,9 @@ export class WalisantriService {
   // ── Attendance ──
   async getAttendance(tenantUuid: string, phone: string, studentId: string, month?: string) {
     const student = await this.verifyOwnership(tenantUuid, phone, studentId);
-    const where: any = { tenant_uuid: student.tenant_uuid, student_id: studentId };
+    const linkedIds = await this.getLinkedStudentIds(student);
+    
+    const where: any = { tenant_uuid: student.tenant_uuid, student_id: { in: linkedIds } };
     if (month) {
       const start = new Date(`${month}-01`);
       const end = new Date(start);
@@ -234,6 +283,11 @@ export class WalisantriService {
     }
     const records = await this.prisma.attendance.findMany({
       where,
+      include: {
+        schedule: {
+          include: { classroom: { include: { unit: { select: { name: true } } } } }
+        }
+      },
       orderBy: { date: 'desc' },
       take: 100,
     });
@@ -253,7 +307,9 @@ export class WalisantriService {
   // ── Shalat Attendance ──
   async getShalatAttendance(tenantUuid: string, phone: string, studentId: string, month?: string) {
     const student = await this.verifyOwnership(tenantUuid, phone, studentId);
-    const where: any = { tenant_uuid: student.tenant_uuid, student_id: studentId };
+    const linkedIds = await this.getLinkedStudentIds(student);
+
+    const where: any = { tenant_uuid: student.tenant_uuid, student_id: { in: linkedIds } };
     if (month) {
       const start = new Date(`${month}-01`);
       const end = new Date(start);
@@ -277,8 +333,9 @@ export class WalisantriService {
   // ── Tahfidz ──
   async getTahfidz(tenantUuid: string, phone: string, studentId: string, category?: string) {
     const student = await this.verifyOwnership(tenantUuid, phone, studentId);
+    const linkedIds = await this.getLinkedStudentIds(student);
     
-    const where: any = { tenant_uuid: student.tenant_uuid, student_id: studentId };
+    const where: any = { tenant_uuid: student.tenant_uuid, student_id: { in: linkedIds } };
     if (category) where.category = category.toUpperCase();
 
     const records = await this.prisma.tahfidzRecord.findMany({
@@ -309,8 +366,9 @@ export class WalisantriService {
   // ── Health ──
   async getHealth(tenantUuid: string, phone: string, studentId: string) {
     const student = await this.verifyOwnership(tenantUuid, phone, studentId);
+    const linkedIds = await this.getLinkedStudentIds(student);
     return this.prisma.healthRecord.findMany({
-      where: { tenant_uuid: student.tenant_uuid, student_id: studentId },
+      where: { tenant_uuid: student.tenant_uuid, student_id: { in: linkedIds } },
       orderBy: { date: 'desc' },
       take: 50,
     });
@@ -319,8 +377,9 @@ export class WalisantriService {
   // ── Violations ──
   async getViolations(tenantUuid: string, phone: string, studentId: string) {
     const student = await this.verifyOwnership(tenantUuid, phone, studentId);
+    const linkedIds = await this.getLinkedStudentIds(student);
     const records = await this.prisma.violation.findMany({
-      where: { tenant_uuid: student.tenant_uuid, student_id: studentId },
+      where: { tenant_uuid: student.tenant_uuid, student_id: { in: linkedIds } },
       orderBy: { date: 'desc' },
     });
     const totalPoints = records.reduce((sum, v) => sum + v.points, 0);
@@ -330,8 +389,9 @@ export class WalisantriService {
   // ── Permissions / Leave ──
   async getPermissions(tenantUuid: string, phone: string, studentId: string) {
     const student = await this.verifyOwnership(tenantUuid, phone, studentId);
+    const linkedIds = await this.getLinkedStudentIds(student);
     return this.prisma.studentPermission.findMany({
-      where: { tenant_uuid: student.tenant_uuid, student_id: studentId },
+      where: { tenant_uuid: student.tenant_uuid, student_id: { in: linkedIds } },
       orderBy: { created_at: 'desc' },
     });
   }
@@ -402,11 +462,12 @@ Mohon segera periksa dashboard untuk memberikan persetujuan.`;
   // ── Bills ──
   async getBills(tenantUuid: string, phone: string, studentId: string, status?: string) {
     const student = await this.verifyOwnership(tenantUuid, phone, studentId);
-    const where: any = { tenant_uuid: student.tenant_uuid, student_id: studentId };
+    const linkedIds = await this.getLinkedStudentIds(student);
+    const where: any = { tenant_uuid: student.tenant_uuid, student_id: { in: linkedIds } };
     if (status) where.status = status;
     return this.prisma.bill.findMany({
       where,
-      include: { fee_category: { select: { name: true, type: true } } },
+      include: { fee_category: { select: { name: true, type: true } }, unit: { select: { name: true } } },
       orderBy: { due_date: 'desc' },
     });
   }
@@ -414,11 +475,13 @@ Mohon segera periksa dashboard untuk memberikan persetujuan.`;
   // ── Transactions ──
   async getTransactions(tenantUuid: string, phone: string, studentId: string) {
     const student = await this.verifyOwnership(tenantUuid, phone, studentId);
+    const linkedIds = await this.getLinkedStudentIds(student);
     return this.prisma.transaction.findMany({
-      where: { tenant_uuid: student.tenant_uuid, student_id: studentId, status: 'success' },
+      where: { tenant_uuid: student.tenant_uuid, student_id: { in: linkedIds }, status: 'success' },
       include: {
         fee_category: { select: { name: true } },
         bill: { select: { period: true } },
+        unit: { select: { name: true } },
       },
       orderBy: { payment_date: 'desc' },
     });
@@ -571,12 +634,13 @@ Mohon segera periksa dashboard untuk memberikan persetujuan.`;
   // ── Report Cards ──
   async getReportCards(tenantUuid: string, phone: string, studentId: string) {
     const student = await this.verifyOwnership(tenantUuid, phone, studentId);
+    const linkedIds = await this.getLinkedStudentIds(student);
     return this.prisma.reportCard.findMany({
-      where: { tenant_uuid: student.tenant_uuid, student_id: studentId, status: 'published' },
+      where: { tenant_uuid: student.tenant_uuid, student_id: { in: linkedIds }, status: 'published' },
       include: {
         academic_year: { select: { name: true } },
         period: { select: { name: true } },
-        classroom: { select: { name: true } },
+        classroom: { select: { name: true, unit: { select: { name: true } } } },
         details: {
           include: { subject: { select: { name: true, kkm: true } } },
           orderBy: { subject: { name: 'asc' } },
@@ -647,9 +711,10 @@ Mohon segera periksa dashboard untuk memberikan persetujuan.`;
     body: { daily_limit?: number | null; weekly_limit?: number | null },
   ) {
     const student = await this.verifyOwnership(tenantUuid, phone, studentId);
+    const linkedIds = await this.getLinkedStudentIds(student);
 
     const wallet = await this.prisma.wallet.findFirst({
-      where: { student_id: studentId, tenant_uuid: student.tenant_uuid },
+      where: { student_id: { in: linkedIds }, tenant_uuid: student.tenant_uuid },
     });
     if (!wallet) throw new NotFoundException('Wallet santri tidak ditemukan');
 
@@ -695,9 +760,10 @@ Mohon segera periksa dashboard untuk memberikan persetujuan.`;
     studentId: string,
   ) {
     const student = await this.verifyOwnership(tenantUuid, phone, studentId);
+    const linkedIds = await this.getLinkedStudentIds(student);
 
     const wallet = await this.prisma.wallet.findFirst({
-      where: { student_id: studentId, tenant_uuid: student.tenant_uuid },
+      where: { student_id: { in: linkedIds }, tenant_uuid: student.tenant_uuid },
     });
     if (!wallet) throw new NotFoundException('Wallet santri tidak ditemukan');
 

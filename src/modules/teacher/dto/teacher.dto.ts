@@ -42,6 +42,7 @@ export class CreateTeacherDto {
   @ApiProperty({ required: false }) @IsOptional() @IsString() email?: string;
   @ApiProperty({ required: false }) @IsOptional() @IsString() password?: string;
   @ApiProperty({ required: false }) @IsOptional() base_salary?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() unit_id?: string;
 }
 
 export class UpdateTeacherDto extends PartialType(CreateTeacherDto) {}

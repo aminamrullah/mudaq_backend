@@ -2,18 +2,48 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { Role, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ClsService } from 'nestjs-cls';
 import { CreateTeacherDto, UpdateTeacherDto } from './dto/teacher.dto';
 
 @Injectable()
 export class TeacherService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private cls: ClsService,
+  ) {}
 
   async create(tenantUuid: string, dto: CreateTeacherDto) {
     const { email, password, base_salary, ...teacherData } = dto;
+
+    // --- Duplicate Check Across Units ---
+    const duplicateConditions: any[] = [];
+    if (teacherData.nip) {
+      duplicateConditions.push({ nip: teacherData.nip });
+    }
+    if (teacherData.name) {
+      duplicateConditions.push({ name: teacherData.name });
+    }
+
+    if (duplicateConditions.length > 0) {
+      const existingTeacher = await this.prisma.teacher.findFirst({
+        where: {
+          tenant_uuid: tenantUuid,
+          deleted_at: null,
+          OR: duplicateConditions,
+        },
+        include: { unit: { select: { name: true } } }
+      });
+
+      if (existingTeacher) {
+        const unitName = existingTeacher.unit?.name || 'Yayasan';
+        throw new ConflictException(`Data guru (NIP atau Nama yang sama) sudah terdaftar di unit ${unitName}. Silakan gunakan fitur Tarik Data Ustadz Lintas Unit jika Anda Admin.`);
+      }
+    }
 
     return this.prisma.$transaction(async (tx) => {
       let userId: string | undefined;
@@ -31,6 +61,7 @@ export class TeacherService {
             password: await bcrypt.hash(password, 12),
             role: Role.USTAD,
             base_salary: dto.base_salary ? new Prisma.Decimal(dto.base_salary) : undefined,
+            unit_id: this.cls.get('unit_id') || undefined,
           },
         });
         userId = user.id;
@@ -40,6 +71,7 @@ export class TeacherService {
         data: {
           ...teacherData,
           tenant_uuid: tenantUuid,
+          unit_id: this.cls.get('unit_id') || undefined,
           user_id: userId,
           birth_date: dto.birth_date ? new Date(dto.birth_date) : undefined,
         },
@@ -49,6 +81,15 @@ export class TeacherService {
 
   async findAll(tenantUuid: string, page = 1, limit = 20, search?: string) {
     const where: any = { tenant_uuid: tenantUuid, deleted_at: null };
+    
+    const unitId = this.cls.get('unit_id');
+    if (unitId) {
+      where.OR = [
+        { unit_id: unitId },
+        { assigned_units: { some: { unit_id: unitId } } }
+      ];
+    }
+
     if (search) where.name = { contains: search, mode: 'insensitive' };
 
     const [data, total] = await Promise.all([
@@ -68,8 +109,23 @@ export class TeacherService {
   }
 
   async findOne(tenantUuid: string, id: string) {
+    const unitId = this.cls.get('unit_id');
+    
+    const whereClause: any = { 
+      id, 
+      tenant_uuid: tenantUuid, 
+      deleted_at: null,
+    };
+
+    if (unitId) {
+      whereClause.OR = [
+        { unit_id: unitId },
+        { assigned_units: { some: { unit_id: unitId } } }
+      ];
+    }
+
     const teacher = await this.prisma.teacher.findFirst({
-      where: { id, tenant_uuid: tenantUuid, deleted_at: null },
+      where: whereClause,
       include: {
         user: { select: { email: true, phone: true, role: true, base_salary: true } },
         classrooms: { select: { id: true, name: true } },
@@ -263,5 +319,69 @@ export class TeacherService {
       where: { id: teacher.id },
       data: { face_descriptor: Prisma.DbNull },
     });
+  }
+
+  async searchGlobal(tenantUuid: string, search: string) {
+    if (!search || search.length < 3) {
+      return [];
+    }
+    const unitId = this.cls.get('unit_id');
+    const teachers = await this.prisma.teacher.findMany({
+      where: {
+        tenant_uuid: tenantUuid,
+        deleted_at: null,
+        OR: [
+          { name: { contains: search, mode: 'insensitive' } },
+          { nip: { contains: search, mode: 'insensitive' } }
+        ]
+      },
+      include: {
+        user: { select: { email: true, phone: true } },
+        assigned_units: { select: { unit_id: true } }
+      },
+      take: 10
+    });
+
+    return teachers.map(t => ({
+      ...t,
+      is_already_in_unit: t.unit_id === unitId || t.assigned_units.some(au => au.unit_id === unitId)
+    }));
+  }
+
+  async assignUnit(tenantUuid: string, teacherId: string) {
+    const unitId = this.cls.get('unit_id');
+    if (!unitId) throw new BadRequestException('Bukan admin unit');
+
+    const teacher = await this.prisma.teacher.findFirst({
+      where: { id: teacherId, tenant_uuid: tenantUuid, deleted_at: null }
+    });
+    if (!teacher) throw new NotFoundException('Guru tidak ditemukan');
+
+    if (teacher.unit_id === unitId) {
+      throw new ConflictException('Guru sudah berada di unit ini');
+    }
+
+    // Check pivot table
+    const existingPivot = await this.prisma.teacherEducationUnit.findUnique({
+      where: {
+        teacher_id_unit_id: {
+          teacher_id: teacherId,
+          unit_id: unitId
+        }
+      }
+    });
+
+    if (existingPivot) {
+      throw new ConflictException('Guru sudah ditugaskan ke unit ini');
+    }
+
+    await this.prisma.teacherEducationUnit.create({
+      data: {
+        teacher_id: teacherId,
+        unit_id: unitId
+      }
+    });
+
+    return { success: true, message: 'Guru berhasil ditarik ke unit ini' };
   }
 }

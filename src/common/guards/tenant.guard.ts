@@ -6,10 +6,14 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { normalizePhone } from '../utils/phone.util';
+import { ClsService } from 'nestjs-cls';
 
 @Injectable()
 export class TenantGuard implements CanActivate {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private cls: ClsService,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
@@ -61,6 +65,13 @@ export class TenantGuard implements CanActivate {
           'Fitur Koperasi & Kantin belum diaktifkan untuk pesantren Anda. Hubungi Superadmin.',
         );
       }
+    }
+
+    if (user && user.tenant_uuid) {
+      this.cls.set('tenant_uuid', user.tenant_uuid);
+    }
+    if (user && user.unit_id) {
+      this.cls.set('unit_id', user.unit_id);
     }
 
     return true;

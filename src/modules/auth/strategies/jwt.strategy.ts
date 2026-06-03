@@ -22,6 +22,7 @@ export interface JwtPayload {
   email: string;
   role: string;
   tenant_uuid: string | null;
+  unit_id?: string | null;
 }
 
 @Injectable()
@@ -51,6 +52,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         phone: true,
         role: true,
         tenant_uuid: true,
+        unit_id: true,
         is_active: true,
         pesantren: {
           select: {
@@ -93,6 +95,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       name: user.name,
       role: user.role,
       tenant_uuid: user.tenant_uuid,
+      unit_id: user.unit_id,
       pesantren_name: user.pesantren?.name,
       subscription_status: user.pesantren?.subscription_status || 'trial',
       expired_at: user.pesantren?.expired_at,
