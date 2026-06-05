@@ -34,6 +34,7 @@ import { PpdbModule } from './modules/ppdb/ppdb.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { ShalatAttendanceModule } from './modules/shalat-attendance/shalat-attendance.module';
 import { EducationUnitModule } from './modules/education-unit/education-unit.module';
+import { UserWalletModule } from './modules/user-wallet/user-wallet.module';
 
 @Module({
   imports: [
@@ -81,6 +82,7 @@ import { EducationUnitModule } from './modules/education-unit/education-unit.mod
     InventoryModule,
     ShalatAttendanceModule,
     EducationUnitModule,
+    UserWalletModule,
   ],
   providers: [
     {

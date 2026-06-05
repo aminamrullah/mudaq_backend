@@ -149,9 +149,9 @@ export class StudentController {
   }
 
   @Delete(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN)
-  remove(@CurrentUser('tenant_uuid') t: string, @Param('id') id: string) {
-    return this.studentService.remove(t, id);
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.ADMIN_UNIT)
+  remove(@CurrentUser() user: any, @Param('id') id: string) {
+    return this.studentService.remove(user, id);
   }
 
   // ── Health Records ──

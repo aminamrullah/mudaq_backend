@@ -255,6 +255,112 @@ export class PayrollService {
     });
   }
 
+  async payItem(tenantUuid: string, itemId: string, dto: { paymentMethod: 'cash' | 'wallet' }) {
+    const item = await this.prisma.payrollItem.findFirst({
+      where: { id: itemId, tenant_uuid: tenantUuid },
+      include: { payroll: true }
+    });
+    
+    if (!item) throw new NotFoundException('Item payroll tidak ditemukan');
+    if (item.payroll.status !== 'approved') throw new BadRequestException('Payroll belum disetujui');
+    if (item.payment_status === 'paid') throw new BadRequestException('Gaji ini sudah dibayarkan');
+
+    return this.prisma.$transaction(async (tx) => {
+      const amount = new Prisma.Decimal(item.total);
+
+      if (dto.paymentMethod === 'wallet') {
+        // 1. Check Tenant Wallet Balance
+        const tenantWallet = await tx.tenantWallet.findUnique({
+          where: { tenant_uuid: tenantUuid },
+        });
+        const pesantren = await tx.pesantren.findUnique({ where: { id: tenantUuid } });
+        const minBalance = Number(pesantren?.min_tenant_wallet_balance || 0);
+
+        if (!tenantWallet || Number(tenantWallet.balance) - Number(amount) < minBalance) {
+          throw new BadRequestException('Saldo Induk Pesantren tidak mencukupi untuk transfer gaji.');
+        }
+
+        // 2. Get or Create User Wallet
+        let userWallet = await tx.userWallet.findFirst({
+          where: { tenant_uuid: tenantUuid, user_id: item.user_id },
+        });
+
+        if (!userWallet) {
+          userWallet = await tx.userWallet.create({
+            data: { tenant_uuid: tenantUuid, user_id: item.user_id, balance: 0 },
+          });
+        }
+
+        // 3. Move Funds
+        const tenantBalanceBefore = tenantWallet.balance;
+        const tenantBalanceAfter = Prisma.Decimal.sub(tenantBalanceBefore, amount);
+        const userBalanceBefore = userWallet.balance;
+        const userBalanceAfter = Prisma.Decimal.add(userBalanceBefore, amount);
+
+        await tx.tenantWallet.update({
+          where: { id: tenantWallet.id },
+          data: { balance: tenantBalanceAfter },
+        });
+
+        await tx.userWallet.update({
+          where: { id: userWallet.id },
+          data: { balance: userBalanceAfter },
+        });
+
+        // 4. Log Transactions
+        await tx.tenantWalletTransaction.create({
+          data: {
+            tenant_uuid: tenantUuid,
+            type: 'withdraw',
+            amount,
+            balance_before: tenantBalanceBefore,
+            balance_after: tenantBalanceAfter,
+            reference: `PAY-${item.payroll.period}`,
+            description: `Pembayaran gaji via dompet ke User ID: ${item.user_id}`,
+          },
+        });
+
+        await tx.userWalletTransaction.create({
+          data: {
+            tenant_uuid: tenantUuid,
+            wallet_id: userWallet.id,
+            type: 'salary',
+            amount,
+            balance_before: userBalanceBefore,
+            balance_after: userBalanceAfter,
+            reference: `PAY-${item.payroll.period}`,
+            description: `Penerimaan gaji periode ${item.payroll.period}`,
+          },
+        });
+      }
+
+      // 5. Update Payroll Item
+      const updatedItem = await tx.payrollItem.update({
+        where: { id: itemId },
+        data: {
+          payment_status: 'paid',
+          payment_method: dto.paymentMethod,
+          paid_at: new Date(),
+        },
+      });
+
+      // 6. Check if all items are paid, if so update Payroll status
+      const allItems = await tx.payrollItem.findMany({
+        where: { payroll_id: item.payroll_id },
+      });
+      const allPaid = allItems.every((i) => i.payment_status === 'paid');
+      
+      if (allPaid) {
+        await tx.payroll.update({
+          where: { id: item.payroll_id },
+          data: { status: 'paid', paid_at: new Date() },
+        });
+      }
+
+      return updatedItem;
+    });
+  }
+
   async markPaid(tenantUuid: string, id: string) {
     const payroll = await this.findOne(tenantUuid, id);
     if (payroll.status !== 'approved')
@@ -267,6 +373,12 @@ export class PayrollService {
         data: { status: 'paid', paid_at: new Date() },
       });
 
+      // Update all unpaid items to paid via cash
+      await tx.payrollItem.updateMany({
+        where: { payroll_id: id, payment_status: 'pending' },
+        data: { payment_status: 'paid', payment_method: 'cash', paid_at: new Date() },
+      });
+
       // 2. Create financial expenditure record
       await tx.expenditure.create({
         data: {
@@ -274,7 +386,7 @@ export class PayrollService {
           title: `Payroll Periode ${payroll.period}`,
           amount: payroll.total_amount,
           category: 'Payroll',
-          description: `Pembayaran gaji karyawan untuk periode ${payroll.period}. Total ${payroll.items.length} penerima.`,
+          description: `Pembayaran massal gaji karyawan (Cash) untuk periode ${payroll.period}. Total ${payroll.items.length} penerima.`,
           date: new Date(),
           payment_method: 'cash'
         }

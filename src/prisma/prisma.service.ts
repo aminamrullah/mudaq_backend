@@ -39,7 +39,7 @@ export class PrismaService
 
       const tenantModels = [
         'AcademicYear', 'AcademicPeriod', 'Subject', 'SubjectCategory', 'Classroom', 
-        'Dormitory', 'DormitoryRoom', 'Schedule', 'Kitab', 'Student', 'Teacher', 'Attendance', 
+        'Dormitory', 'Schedule', 'Kitab', 'Student', 'Teacher', 'Attendance', 
         'TahfidzRecord', 'Violation', 'HealthRecord', 'StudentPermission', 
         'FeeCategory', 'Bill', 'Transaction', 'Wallet', 'WalletTransaction', 
         'TenantWallet', 'TenantWalletTransaction', 'User', 'Post', 'SaasInvoice', 

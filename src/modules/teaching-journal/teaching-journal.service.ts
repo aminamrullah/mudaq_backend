@@ -1,10 +1,14 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ClsService } from 'nestjs-cls';
 import { CreateTeachingJournalDto, UpdateTeachingJournalDto } from './dto/teaching-journal.dto';
 
 @Injectable()
 export class TeachingJournalService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cls: ClsService
+  ) {}
 
   async create(tenant_uuid: string, role: string, userId: string, dto: CreateTeachingJournalDto) {
     let teacherId = dto.teacher_id;
@@ -65,6 +69,7 @@ export class TeachingJournalService {
 
   async findByTeacher(tenant_uuid: string, role: string, userId: string, teacher_id: string, month?: string, classroom_id?: string) {
     let tid = teacher_id;
+    const unitId = this.cls.get('unit_id');
 
     if (role === 'USTAD') {
       const teacher = await this.prisma.teacher.findFirst({
@@ -81,7 +86,16 @@ export class TeachingJournalService {
       where.date = { gte: start, lte: end };
     }
     if (classroom_id && classroom_id !== 'undefined') {
-      where.schedule = { classroom_id };
+      where.schedule = { ...where.schedule, classroom_id };
+    }
+
+    if (unitId) {
+      where.schedule = { 
+        ...where.schedule,
+        classroom: {
+          OR: [{ unit_id: unitId }, { unit_id: null }]
+        }
+      };
     }
 
     return this.prisma.teachingJournal.findMany({

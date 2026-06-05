@@ -101,9 +101,9 @@ export class TeacherController {
   }
 
   @Delete(':id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN, Role.ADMIN_UNIT)
-  remove(@CurrentUser('tenant_uuid') t: string, @Param('id') id: string) {
-    return this.svc.remove(t, id);
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.ADMIN_UNIT)
+  remove(@CurrentUser() user: any, @Param('id') id: string) {
+    return this.svc.remove(user, id);
   }
 
   @Put(':id/students')

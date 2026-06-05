@@ -85,4 +85,15 @@ export class PayrollController {
   ) {
     return this.svc.updateItem(t, itemId, dto);
   }
+
+  @Post('items/:itemId/pay')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN)
+  @ApiOperation({ summary: 'Pay individual payroll item (cash or wallet)' })
+  payItem(
+    @CurrentUser('tenant_uuid') t: string,
+    @Param('itemId') itemId: string,
+    @Body() dto: { paymentMethod: 'cash' | 'wallet' },
+  ) {
+    return this.svc.payItem(t, itemId, dto);
+  }
 }

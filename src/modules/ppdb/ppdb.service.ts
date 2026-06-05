@@ -49,6 +49,18 @@ export class PpdbService {
 
   async create(tenantUuid: string, dto: CreatePpdbWaveDto) {
     const unitId = this.cls.get('unit_id');
+    
+    if (dto.is_active) {
+      const whereClause: any = { tenant_uuid: tenantUuid };
+      if (unitId) {
+        whereClause.unit_ids = { has: unitId };
+      }
+      await this.prisma.ppdbWave.updateMany({
+        where: whereClause,
+        data: { is_active: false }
+      });
+    }
+
     return this.prisma.ppdbWave.create({
       data: {
         ...dto,
@@ -62,6 +74,18 @@ export class PpdbService {
 
   async update(id: string, tenantUuid: string, dto: UpdatePpdbWaveDto) {
     await this.findOne(id, tenantUuid);
+    const unitId = this.cls.get('unit_id');
+    
+    if (dto.is_active) {
+      const whereClause: any = { tenant_uuid: tenantUuid, id: { not: id } };
+      if (unitId) {
+        whereClause.unit_ids = { has: unitId };
+      }
+      await this.prisma.ppdbWave.updateMany({
+        where: whereClause,
+        data: { is_active: false }
+      });
+    }
     
     const data: any = { ...dto };
     if (dto.start_date) data.start_date = new Date(dto.start_date);

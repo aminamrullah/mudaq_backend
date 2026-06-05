@@ -7,6 +7,10 @@ export class CreateEducationUnitDto {
 
   @IsString()
   @IsOptional()
+  tingkat?: string;
+
+  @IsString()
+  @IsOptional()
   type?: string;
 
   @IsString()
@@ -22,6 +26,10 @@ export class UpdateEducationUnitDto {
   @IsString()
   @IsOptional()
   name?: string;
+
+  @IsString()
+  @IsOptional()
+  tingkat?: string;
 
   @IsString()
   @IsOptional()

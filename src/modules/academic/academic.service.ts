@@ -233,8 +233,12 @@ export class AcademicService {
   // Kitabs
   // ==========================================
   async getKitabs(tenantId: string) {
+    const unitId = this.cls.get('unit_id');
     return this.prisma.kitab.findMany({
-      where: { tenant_uuid: tenantId },
+      where: { 
+        tenant_uuid: tenantId,
+        ...(unitId ? { OR: [{ unit_id: unitId }, { unit_id: null }] } : {})
+      },
       orderBy: { name: 'asc' },
     });
   }
@@ -243,6 +247,7 @@ export class AcademicService {
     return this.prisma.kitab.create({
       data: {
         tenant_uuid: tenantId,
+        unit_id: this.cls.get('unit_id') || undefined,
         name: dto.name,
         author: dto.author,
         description: dto.description,
@@ -306,6 +311,13 @@ export class AcademicService {
   // ==========================================
   async getSchedules(tenantId: string, role: string, userId: string, classroomId?: string, myOnly?: boolean) {
     const where: any = { tenant_uuid: tenantId };
+    const unitId = this.cls.get('unit_id');
+
+    if (unitId) {
+      where.classroom = {
+        OR: [{ unit_id: unitId }, { unit_id: null }]
+      };
+    }
 
     if (role === 'USTAD' || myOnly) {
       // Find the teacher profile linked to this user

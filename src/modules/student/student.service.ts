@@ -368,10 +368,30 @@ export class StudentService {
         violations: { orderBy: { date: 'desc' } },
         health_records: { orderBy: { date: 'desc' } },
         student_permissions: { orderBy: { start_date: 'desc' } },
+        registrations: {
+          include: {
+            unit: true,
+            classroom: true,
+            dormitory: true,
+            dormitory_room: true,
+            tahfidz_teacher: { include: { user: true } },
+            quran_teacher: { include: { user: true } },
+            kitab_teacher: { include: { user: true } }
+          }
+        }
       },
     });
     if (!student) throw new NotFoundException('Santri tidak ditemukan');
-    return student;
+
+    // MENGGABUNGKAN DATA ABSENSI DAN REGISTRASI UNIT
+    let linkedAttendances = student.attendances.map(a => ({ ...a, unit_name: 'Pusat/Yayasan' }));
+    let linkedUnits = student.registrations.map(reg => reg.unit).filter(Boolean);
+
+    return {
+      ...student,
+      attendances: linkedAttendances,
+      linked_units: linkedUnits,
+    };
   }
 
   async update(tenantUuid: string, id: string, dto: UpdateStudentDto) {
@@ -701,10 +721,30 @@ export class StudentService {
     });
   }
 
-  async remove(tenantUuid: string, id: string) {
+  
+  async remove(userOrTenant: any, id: string) {
+    const tenantUuid = typeof userOrTenant === 'string' ? userOrTenant : userOrTenant.tenant_uuid;
     const student = await this.findOne(tenantUuid, id);
 
     return await this.prisma.$transaction(async (tx) => {
+      // If user is a unit admin, just detach from that unit
+      if (typeof userOrTenant === 'object' && userOrTenant.role === 'admin_unit' && userOrTenant.unit_id) {
+        // Delete registration for this unit
+        await tx.studentRegistration.deleteMany({
+          where: { student_id: id, unit_id: userOrTenant.unit_id }
+        });
+        
+        // As fallback, if student's main record has this unit_id, nullify it (legacy)
+        if (student.unit_id === userOrTenant.unit_id) {
+          await tx.student.update({
+            where: { id },
+            data: { unit_id: null, classroom_id: null, status: 'KELUAR' }
+          });
+        }
+        
+        return { message: 'Santri berhasil dilepaskan dari unit ini.' };
+      }
+
       const timestamp = Date.now();
 
       // Soft delete student and free up unique fields
@@ -846,7 +886,7 @@ export class StudentService {
           mother_job: getValue(row, ['Pekerjaan Ibu', 'mother_job', 'Mother Job']),
           parent_phone: formatValue(getValue(row, ['No HP Wali', 'No. HP', 'WA Wali', 'phone', 'WhatsApp', 'HP', 'Telepon'])),
           parent_email: getValue(row, ['Email Wali', 'Email', 'parent_email'])?.toString(),
-          status: 'AKTIF',
+          status: 'CALON',
           // Optional physical data
           weight: parseInt(getValue(row, ['Berat', 'weight', 'BB']) || '0') || undefined,
           height: parseInt(getValue(row, ['Tinggi', 'height', 'TB']) || '0') || undefined,
@@ -891,7 +931,7 @@ export class StudentService {
       'Nama', 'NIS', 'NISN', 'NIK', 'Jenis Kelamin',
       'Tempat Lahir', 'Tanggal Lahir', 'Alamat',
       'Nama Ayah', 'Pekerjaan Ayah', 'Nama Ibu', 'Pekerjaan Ibu',
-      'No HP Wali', 'Pendidikan Terakhir', 'Berat', 'Tinggi',
+      'No HP Wali', 'Email Wali', 'Pendidikan Terakhir', 'Berat', 'Tinggi',
       'Tahun Masuk', 'Provinsi', 'Kota', 'Kecamatan', 'Desa'
     ];
 
@@ -899,7 +939,7 @@ export class StudentService {
       'Ahmad Santri', '20260001', "'0012345678", "'1234567890123456", 'L',
       'Malang', '2010-05-15', 'Jl. Pesantren No. 123',
       'Bpk. Fulan', 'Wiraswasta', 'Ibu Fulanah', 'IRT',
-      "'081234567890", 'SD/MI', '45', '160',
+      "'081234567890", 'email@contoh.com', 'SD/MI', '45', '160',
       '2026', 'Jawa Timur', 'Malang', 'Ngadiluwih', 'Purwokerto'
     ];
 
