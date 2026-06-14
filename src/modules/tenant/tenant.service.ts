@@ -270,7 +270,7 @@ export class TenantService {
       },
     });
   }
-  async generateInvoice(id: string) {
+  async generateInvoice(id: string, items?: Array<{name: string, amount: number}>) {
     const tenant = await this.prisma.pesantren.findUnique({
       where: { id },
     });
@@ -284,16 +284,19 @@ export class TenantService {
         : `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
     let amount = 0;
-    if (tenant.billing_type === 'fixed') {
-      amount = Number(tenant.fixed_billing_amount);
-    } else {
-      const uniqueCount = await this.getUniqueStudentCount(id);
-      amount = Number(tenant.price_per_student) * uniqueCount;
-    }
+    let finalItems = items;
 
-    // If yearly, we might want to multiply by 12 if the price entered was monthly,
-    // but usually in SaaS, the "fixed_amount" for yearly is a different set price.
-    // We'll stick to the configured value.
+    if (items && items.length > 0) {
+      amount = items.reduce((sum, item) => sum + Number(item.amount), 0);
+    } else {
+      if (tenant.billing_type === 'fixed') {
+        amount = Number(tenant.fixed_billing_amount);
+      } else {
+        const uniqueCount = await this.getUniqueStudentCount(id);
+        amount = Number(tenant.price_per_student) * uniqueCount;
+      }
+      finalItems = [{ name: `Biaya Berlangganan ${tenant.billing_cycle === 'yearly' ? 'Tahunan' : 'Bulanan'}`, amount }];
+    }
 
     // Due date logic
     const dueDate = new Date();
@@ -307,7 +310,7 @@ export class TenantService {
     if (existing) {
       return this.prisma.saasInvoice.update({
         where: { id: existing.id },
-        data: { amount },
+        data: { amount, items: finalItems as any },
       });
     }
 
@@ -316,6 +319,7 @@ export class TenantService {
         tenant_uuid: id,
         period,
         amount,
+        items: finalItems as any,
         due_date: dueDate,
         status: 'unpaid',
       },
@@ -440,16 +444,23 @@ export class TenantService {
                   <thead>
                       <tr>
                           <th>Deskripsi Layanan</th>
-                          <th style="text-align: center;">Periode</th>
                           <th style="text-align: right;">Total</th>
                       </tr>
                   </thead>
                   <tbody>
-                      <tr>
-                          <td>Biaya Penggunaan Aplikasi Pesantren MUDAQ</td>
-                          <td style="text-align: center;">${invoice.period}</td>
-                          <td style="text-align: right;">Rp ${amount}</td>
-                      </tr>
+                      ${invoice.items && Array.isArray(invoice.items) 
+                        ? (invoice.items as Array<{name: string, amount: number}>).map(item => `
+                          <tr>
+                              <td>${item.name}</td>
+                              <td style="text-align: right;">Rp ${Number(item.amount).toLocaleString('id-ID')}</td>
+                          </tr>
+                        `).join('') 
+                        : `
+                          <tr>
+                              <td>Biaya Penggunaan Aplikasi Pesantren MUDAQ (Periode: ${invoice.period})</td>
+                              <td style="text-align: right;">Rp ${amount}</td>
+                          </tr>
+                        `}
                   </tbody>
               </table>
 

@@ -97,6 +97,30 @@ export class CreateTenantDto {
   qris_surcharge_fee?: number;
 
   @IsOptional()
+  @IsNumber()
+  xendit_fee_user?: number;
+
+  @IsOptional()
+  @IsNumber()
+  platform_fee_user?: number;
+
+  @IsOptional()
+  @IsNumber()
+  platform_fee_tenant?: number;
+
+  @IsOptional()
+  @IsNumber()
+  qris_xendit_fee_user?: number;
+
+  @IsOptional()
+  @IsNumber()
+  qris_platform_fee_user?: number;
+
+  @IsOptional()
+  @IsNumber()
+  qris_platform_fee_tenant?: number;
+
+  @IsOptional()
   @IsBoolean()
   qris_fee_is_percent?: boolean;
 
@@ -135,29 +159,10 @@ export class CreateTenantDto {
   @IsString()
   logo?: string;
 
-  @ApiProperty({ required: false })
+@ApiProperty({ required: false })
   @IsOptional()
   @IsString()
   letterhead?: string;
-
-  @ApiProperty({ required: false })
-  @IsString()
-  @IsOptional()
-  description?: string;
-
-  @ApiProperty({ required: false, example: 'MODERN' })
-  @IsString()
-  @IsOptional()
-  landing_page_template?: string;
-
-  @ApiProperty({ required: false })
-  @IsOptional()
-  @IsBoolean()
-  can_manage_landing_page?: boolean;
-
-  @ApiProperty({ required: false })
-  @IsOptional()
-  landing_page_config?: any;
 
   @ApiProperty({ required: false })
   @IsOptional()
@@ -172,12 +177,37 @@ export class CreateTenantDto {
   @ApiProperty({ required: false })
   @IsOptional()
   @IsBoolean()
-  addon_landing_page?: boolean;
+  addon_ppdb?: boolean;
 
   @ApiProperty({ required: false })
   @IsOptional()
   @IsBoolean()
   addon_inventaris?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  addon_rfid?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  addon_donasi?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  addon_payroll?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  addon_kepegawaian?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsNumber()
+  min_tenant_wallet_balance?: number;
 
   @ApiProperty({ required: false })
   @IsOptional()
@@ -218,6 +248,36 @@ export class UpdateTenantDto extends PartialType(CreateTenantDto) {
 
   @ApiProperty({ required: false })
   @IsOptional()
+  @IsNumber()
+  xendit_fee_user?: number;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsNumber()
+  platform_fee_user?: number;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsNumber()
+  platform_fee_tenant?: number;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsNumber()
+  qris_xendit_fee_user?: number;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsNumber()
+  qris_platform_fee_user?: number;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsNumber()
+  qris_platform_fee_tenant?: number;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
   @IsBoolean()
   qris_fee_is_percent?: boolean;
 
@@ -228,6 +288,51 @@ export class UpdateTenantDto extends PartialType(CreateTenantDto) {
 
   @ApiProperty({ required: false })
   @IsOptional()
+  @IsBoolean()
+  addon_koperasi?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  addon_wa_gateway?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  addon_ppdb?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  addon_inventaris?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  addon_rfid?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  addon_donasi?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  addon_payroll?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  addon_kepegawaian?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
   @IsNumber()
   manual_topup_fee?: number;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsNumber()
+  min_tenant_wallet_balance?: number;
 }

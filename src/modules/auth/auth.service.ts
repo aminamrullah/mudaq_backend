@@ -9,7 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import { PrismaService } from '../../prisma/prisma.service';
-import { LoginDto, RegisterDto, RequestOtpDto, VerifyOtpDto, ResetPasswordDto } from './dto/auth.dto';
+import { LoginDto, RegisterDto, RequestOtpDto, VerifyOtpDto, ResetPasswordDto, RegisterWalisantriDto, LoginWalisantriDto, VerifyRegistrationOtpDto } from './dto/auth.dto';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { MailService } from '../mail/mail.service';
 import { normalizePhone } from '../../common/utils/phone.util';
@@ -44,11 +44,14 @@ export class AuthService {
             expired_at: true,
             calendar_type: true,
             max_students: true,
-            can_manage_landing_page: true,
-            addon_koperasi: true,
-            addon_wa_gateway: true,
-            addon_landing_page: true,
-            addon_inventaris: true,
+addon_koperasi: true,
+             addon_wa_gateway: true,
+             addon_ppdb: true,
+             addon_inventaris: true,
+             addon_rfid: true,
+             addon_donasi: true,
+             addon_payroll: true,
+             addon_kepegawaian: true,
             deleted_at: true,
           } as any,
         },
@@ -140,11 +143,15 @@ export class AuthService {
         pesantren_slug: user.pesantren?.slug,
         max_students: user.pesantren?.max_students || 0,
         calendar_type: user.pesantren?.calendar_type || 'gregorian',
-        can_manage_landing_page: user.pesantren?.can_manage_landing_page || false,
+        
         addon_koperasi: user.pesantren?.addon_koperasi || false,
         addon_wa_gateway: user.pesantren?.addon_wa_gateway || false,
-        addon_landing_page: user.pesantren?.addon_landing_page || false,
+        addon_ppdb: user.pesantren?.addon_ppdb || false,
         addon_inventaris: user.pesantren?.addon_inventaris || false,
+        addon_rfid: user.pesantren?.addon_rfid || false,
+        addon_donasi: user.pesantren?.addon_donasi || false,
+        addon_payroll: user.pesantren?.addon_payroll || false,
+        addon_kepegawaian: user.pesantren?.addon_kepegawaian || false,
         subscription_status: user.pesantren?.subscription_status || 'trial',
         expired_at: user.pesantren?.expired_at,
         is_homeroom: isHomeroom,
@@ -299,11 +306,14 @@ Berlaku selama 5 menit. Jangan berikan kode ini kepada siapapun.`,
             expired_at: true,
             calendar_type: true,
             max_students: true,
-            can_manage_landing_page: true,
-            addon_koperasi: true,
-            addon_wa_gateway: true,
-            addon_landing_page: true,
-            addon_inventaris: true,
+addon_koperasi: true,
+             addon_wa_gateway: true,
+             addon_ppdb: true,
+             addon_inventaris: true,
+             addon_rfid: true,
+             addon_donasi: true,
+             addon_payroll: true,
+             addon_kepegawaian: true,
             logo: true,
             deleted_at: true,
           } as any,
@@ -386,11 +396,15 @@ Berlaku selama 5 menit. Jangan berikan kode ini kepada siapapun.`,
         pesantren_slug: user.pesantren?.slug,
         max_students: user.pesantren?.max_students || 0,
         calendar_type: user.pesantren?.calendar_type || 'gregorian',
-        can_manage_landing_page: user.pesantren?.can_manage_landing_page || false,
+        
         addon_koperasi: user.pesantren?.addon_koperasi || false,
         addon_wa_gateway: user.pesantren?.addon_wa_gateway || false,
-        addon_landing_page: user.pesantren?.addon_landing_page || false,
+        addon_ppdb: user.pesantren?.addon_ppdb || false,
         addon_inventaris: user.pesantren?.addon_inventaris || false,
+        addon_rfid: user.pesantren?.addon_rfid || false,
+        addon_donasi: user.pesantren?.addon_donasi || false,
+        addon_payroll: user.pesantren?.addon_payroll || false,
+        addon_kepegawaian: user.pesantren?.addon_kepegawaian || false,
         pesantren_logo: user.pesantren?.logo,
         subscription_status: user.pesantren?.subscription_status || 'trial',
         expired_at: user.pesantren?.expired_at,
@@ -541,6 +555,9 @@ Berlaku selama 5 menit. Jangan berikan kode ini kepada siapapun.`,
         throw new UnauthorizedException('Gagal mengirim email reset password. Silakan coba lagi nanti.');
       }
     } else if (identifier) {
+      // Modifikasi: Gunakan WA Pusat (tenantUuid = null) jika walisantri
+      const useTenantWa = user.role === 'WALI_SANTRI' ? null : user.tenant_uuid;
+      
       await this.whatsappService.sendMessage(
         identifier,
         `*RESET PASSWORD MUDAQ*
@@ -548,7 +565,7 @@ Berlaku selama 5 menit. Jangan berikan kode ini kepada siapapun.`,
 Kode reset password Anda adalah: *${otp}*
   
 Berlaku selama 10 menit. Masukkan kode ini di halaman reset password aplikasi MUDAQ.`,
-        user.tenant_uuid,
+        useTenantWa,
         true
       );
       return { message: 'Kode reset password telah dikirim ke WhatsApp Anda' };
@@ -595,7 +612,10 @@ Berlaku selama 10 menit. Masukkan kode ini di halaman reset password aplikasi MU
 
     await this.prisma.user.update({
       where: { id: user.id },
-      data: { password: hashedPassword },
+      data: { 
+        password: hashedPassword,
+        is_verified: true
+      },
     });
 
     // Delete OTP after success
@@ -709,11 +729,14 @@ Berlaku selama 10 menit. Masukkan kode ini di halaman reset password aplikasi MU
             expired_at: true,
             calendar_type: true,
             max_students: true,
-            can_manage_landing_page: true,
-            addon_koperasi: true,
-            addon_wa_gateway: true,
-            addon_landing_page: true,
-            addon_inventaris: true,
+addon_koperasi: true,
+             addon_wa_gateway: true,
+             addon_ppdb: true,
+             addon_inventaris: true,
+             addon_rfid: true,
+             addon_donasi: true,
+             addon_payroll: true,
+             addon_kepegawaian: true,
             logo: true,
             deleted_at: true,
           } as any,
@@ -790,11 +813,14 @@ Berlaku selama 10 menit. Masukkan kode ini di halaman reset password aplikasi MU
             pesantren_slug: user.pesantren?.slug,
             max_students: user.pesantren?.max_students || 0,
             calendar_type: user.pesantren?.calendar_type || 'gregorian',
-            can_manage_landing_page: user.pesantren?.can_manage_landing_page || false,
+            
             addon_koperasi: user.pesantren?.addon_koperasi || false,
             addon_wa_gateway: user.pesantren?.addon_wa_gateway || false,
-            addon_landing_page: user.pesantren?.addon_landing_page || false,
             addon_inventaris: user.pesantren?.addon_inventaris || false,
+            addon_rfid: user.pesantren?.addon_rfid || false,
+            addon_donasi: user.pesantren?.addon_donasi || false,
+            addon_payroll: user.pesantren?.addon_payroll || false,
+            addon_kepegawaian: user.pesantren?.addon_kepegawaian || false,
             subscription_status: user.pesantren?.subscription_status || 'trial',
             expired_at: user.pesantren?.expired_at,
             is_homeroom: isHomeroom,
@@ -1008,11 +1034,10 @@ Berlaku selama 10 menit. Masukkan kode ini di halaman reset password aplikasi MU
             expired_at: true,
             calendar_type: true,
             max_students: true,
-            can_manage_landing_page: true,
-            addon_koperasi: true,
-            addon_wa_gateway: true,
-            addon_landing_page: true,
-            addon_inventaris: true,
+addon_koperasi: true,
+             addon_wa_gateway: true,
+             addon_ppdb: true,
+             addon_inventaris: true,
             logo: true,
           } as any,
         },
@@ -1079,11 +1104,13 @@ Berlaku selama 10 menit. Masukkan kode ini di halaman reset password aplikasi MU
         pesantren_slug: fullUser.pesantren?.slug,
         max_students: fullUser.pesantren?.max_students || 0,
         calendar_type: fullUser.pesantren?.calendar_type || 'gregorian',
-        can_manage_landing_page: fullUser.pesantren?.can_manage_landing_page || false,
+        
         addon_koperasi: fullUser.pesantren?.addon_koperasi || false,
         addon_wa_gateway: fullUser.pesantren?.addon_wa_gateway || false,
-        addon_landing_page: fullUser.pesantren?.addon_landing_page || false,
         addon_inventaris: fullUser.pesantren?.addon_inventaris || false,
+        addon_rfid: fullUser.pesantren?.addon_rfid || false,
+        addon_donasi: fullUser.pesantren?.addon_donasi || false,
+        addon_payroll: fullUser.pesantren?.addon_payroll || false,
         pesantren_logo: fullUser.pesantren?.logo,
         subscription_status: fullUser.pesantren?.subscription_status || 'trial',
         expired_at: fullUser.pesantren?.expired_at,
@@ -1120,4 +1147,325 @@ Berlaku selama 10 menit. Masukkan kode ini di halaman reset password aplikasi MU
 
     return { access_token, refresh_token };
   }
+
+  async registerWalisantri(dto: RegisterWalisantriDto) {
+    if (!dto.phone) throw new UnauthorizedException('Nomor HP harus diisi');
+    const cleanPhone = dto.phone.replace(/[^0-9]/g, '');
+    const normalizedPhone = normalizePhone(cleanPhone);
+    const legacyPhone = normalizedPhone.startsWith('628') ? '0' + normalizedPhone.slice(2) : cleanPhone;
+
+    let user = await this.prisma.user.findFirst({
+      where: {
+        phone: { in: [normalizedPhone, legacyPhone, cleanPhone, dto.phone].filter(Boolean) as string[] },
+        deleted_at: null
+      },
+    });
+
+    // Auto-detect tenant via Student.parent_phone
+    let tenantUuid = null;
+    if (!tenantUuid) {
+      const student = await this.prisma.student.findFirst({
+        where: { 
+          parent_phone: { in: [normalizedPhone, legacyPhone, cleanPhone, dto.phone].filter(Boolean) as string[] },
+          deleted_at: null 
+        },
+      });
+      if (student) {
+        tenantUuid = student.tenant_uuid;
+      }
+    }
+
+    // Verify phone isolation
+    await this.validatePhoneIsolation(normalizedPhone, tenantUuid);
+
+    if (user && user.tenant_uuid && tenantUuid && user.tenant_uuid !== tenantUuid) {
+      throw new ConflictException(`Nomor WhatsApp ${normalizedPhone} sudah terdaftar di pesantren lain.`);
+    }
+
+    const hashedPassword = await bcrypt.hash(dto.password, 12);
+
+    if (user) {
+      if (user.is_verified) {
+        throw new ConflictException('Nomor WhatsApp sudah terdaftar dan terverifikasi. Silakan login.');
+      } else {
+        // User ada tapi belum verify, update password dan kirim ulang OTP
+        user = await this.prisma.user.update({
+          where: { id: user.id },
+          data: { 
+            password: hashedPassword,
+            tenant_uuid: tenantUuid || user.tenant_uuid 
+          }
+        });
+      }
+    } else {
+      // Free up unique constraint if there's a deleted user with this phone
+      const deletedUser = await this.prisma.user.findFirst({
+        where: {
+          phone: { in: [normalizedPhone, legacyPhone, cleanPhone, dto.phone].filter(Boolean) as string[] },
+          deleted_at: { not: null }
+        }
+      });
+
+      if (deletedUser) {
+        await this.prisma.user.update({
+          where: { id: deletedUser.id },
+          data: {
+            phone: deletedUser.phone ? `${deletedUser.phone}_del_${Date.now()}` : null,
+            email: deletedUser.email ? `${deletedUser.email}_del_${Date.now()}` : null,
+          }
+        });
+      }
+
+      user = await this.prisma.user.create({
+        data: {
+          name: dto.name || 'Walisantri',
+          phone: normalizedPhone,
+          password: hashedPassword,
+          role: 'WALI_SANTRI',
+          tenant_uuid: tenantUuid || null,
+          is_verified: false,
+        },
+      });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 mins
+
+    await this.prisma.otp.upsert({
+      where: { phone: normalizedPhone },
+      update: { otp, expires_at: expiresAt },
+      create: { phone: normalizedPhone, otp, expires_at: expiresAt },
+    });
+
+    // Send WA via WA Pusat (System session) -> tenantUuid = null
+    await this.whatsappService.sendMessage(
+      normalizedPhone,
+      `*KODE OTP REGISTRASI MUDAQ*
+      
+Kode verifikasi pendaftaran akun Anda adalah: *${otp}*
+
+Berlaku selama 5 menit. Jangan berikan kode ini kepada siapapun.`,
+      null, 
+      true
+    );
+
+    return { message: 'OTP telah dikirim ke WhatsApp Anda via Mudaq Pusat' };
+  }
+
+  async verifyRegistrationOtp(dto: VerifyRegistrationOtpDto, meta?: { ip: string; ua: string }) {
+    const cleanPhone = dto.phone.replace(/[^0-9]/g, '');
+    const normalizedPhone = normalizePhone(cleanPhone);
+    const legacyPhone = normalizedPhone.startsWith('628') ? '0' + normalizedPhone.slice(2) : cleanPhone;
+
+    const otpRecord = await this.prisma.otp.findUnique({
+      where: { phone: normalizedPhone },
+    });
+
+    if (!otpRecord || otpRecord.otp !== dto.otp) {
+      throw new UnauthorizedException('Kode OTP salah');
+    }
+
+    if (otpRecord.expires_at < new Date()) {
+      throw new UnauthorizedException('Kode OTP sudah kadaluwarsa');
+    }
+
+    // Delete OTP after success
+    await this.prisma.otp.delete({ where: { id: otpRecord.id } });
+
+    const user = (await this.prisma.user.findFirst({
+      where: { 
+        phone: { in: [normalizedPhone, legacyPhone, cleanPhone, dto.phone].filter(Boolean) as string[] },
+        deleted_at: null
+      },
+      include: {
+        pesantren: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            subscription_status: true,
+            expired_at: true,
+            calendar_type: true,
+            max_students: true,
+            addon_koperasi: true,
+            addon_wa_gateway: true,
+            addon_ppdb: true,
+            addon_inventaris: true,
+            logo: true,
+            deleted_at: true,
+          } as any,
+        },
+        koperasi_outlet: {
+          select: {
+            id: true,
+            name: true,
+          }
+        },
+      },
+    })) as any;
+
+    if (!user) throw new UnauthorizedException('Akun tidak ditemukan');
+
+    // Update to is_verified = true
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { 
+        is_verified: true,
+        last_login_at: new Date() 
+      },
+    });
+
+    const tokens = await this.generateTokens(user);
+
+    // Record Activity
+    await this.prisma.userActivity.create({
+      data: {
+        user_id: user.id,
+        tenant_uuid: user.tenant_uuid,
+        action: 'VERIFY_REGISTER',
+        description: `User ${user.phone} verified registration via OTP`,
+        ip_address: meta?.ip,
+        user_agent: meta?.ua,
+      },
+    });
+
+    return {
+      ...tokens,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        tenant_uuid: user.tenant_uuid,
+        unit_id: user.unit_id,
+        pesantren_name: user.pesantren?.name,
+        pesantren_slug: user.pesantren?.slug,
+        max_students: user.pesantren?.max_students || 0,
+        calendar_type: user.pesantren?.calendar_type || 'gregorian',
+        addon_koperasi: user.pesantren?.addon_koperasi || false,
+        addon_wa_gateway: user.pesantren?.addon_wa_gateway || false,
+        addon_ppdb: user.pesantren?.addon_ppdb || false,
+        addon_inventaris: user.pesantren?.addon_inventaris || false,
+        pesantren_logo: user.pesantren?.logo,
+        subscription_status: user.pesantren?.subscription_status || 'trial',
+        expired_at: user.pesantren?.expired_at,
+        is_homeroom: false,
+        homeroom_classes: [],
+        homeroom_class_ids: [],
+        is_tahfidz_teacher: false,
+        can_manage_quran: false,
+        can_manage_kitab: false,
+        koperasi_outlet_id: user.koperasi_outlet_id,
+        koperasi_outlet_name: (user as any).koperasi_outlet?.name,
+      },
+    };
+  }
+
+  async loginWalisantri(dto: LoginWalisantriDto, meta?: { ip: string; ua: string }) {
+    const cleanPhone = dto.phone.replace(/[^0-9]/g, '');
+    const normalizedPhone = normalizePhone(cleanPhone);
+    const legacyPhone = normalizedPhone.startsWith('628') ? '0' + normalizedPhone.slice(2) : cleanPhone;
+
+    const user = (await this.prisma.user.findFirst({
+      where: {
+        phone: { in: [normalizedPhone, legacyPhone, cleanPhone, dto.phone].filter(Boolean) as string[] },
+        deleted_at: null,
+      },
+      include: {
+        pesantren: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            subscription_status: true,
+            expired_at: true,
+            calendar_type: true,
+            max_students: true,
+            addon_koperasi: true,
+            addon_wa_gateway: true,
+            addon_ppdb: true,
+            addon_inventaris: true,
+            logo: true,
+            deleted_at: true,
+          } as any,
+        },
+        koperasi_outlet: {
+          select: {
+            id: true,
+            name: true,
+          }
+        },
+      },
+    })) as any;
+
+    if (!user) throw new UnauthorizedException('Akun tidak ditemukan. Silakan daftar terlebih dahulu.');
+    if (!user.is_active) throw new UnauthorizedException('Akun dinonaktifkan');
+    if (!user.is_verified) throw new UnauthorizedException('Akun belum diverifikasi. Silakan daftar/verifikasi kembali.');
+    if (user.pesantren && user.pesantren.deleted_at) {
+      throw new UnauthorizedException('Pesantren Anda telah dihapus');
+    }
+
+    if (user.role !== 'WALI_SANTRI') {
+      throw new UnauthorizedException('Aplikasi ini khusus untuk Walisantri');
+    }
+
+    const valid = await bcrypt.compare(dto.password, user.password);
+    if (!valid) throw new UnauthorizedException('Password salah');
+
+    // Update last login
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { last_login_at: new Date() },
+    });
+
+    const tokens = await this.generateTokens(user);
+
+    // Record Activity
+    await this.prisma.userActivity.create({
+      data: {
+        user_id: user.id,
+        tenant_uuid: user.tenant_uuid,
+        action: 'LOGIN',
+        description: `User ${user.phone} logged in via password`,
+        ip_address: meta?.ip,
+        user_agent: meta?.ua,
+      },
+    });
+
+    return {
+      ...tokens,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        tenant_uuid: user.tenant_uuid,
+        unit_id: user.unit_id,
+        pesantren_name: user.pesantren?.name,
+        pesantren_logo: user.pesantren?.logo,
+        pesantren_slug: user.pesantren?.slug,
+        max_students: user.pesantren?.max_students || 0,
+        calendar_type: user.pesantren?.calendar_type || 'gregorian',
+        addon_koperasi: user.pesantren?.addon_koperasi || false,
+        addon_wa_gateway: user.pesantren?.addon_wa_gateway || false,
+        addon_ppdb: user.pesantren?.addon_ppdb || false,
+        addon_inventaris: user.pesantren?.addon_inventaris || false,
+        subscription_status: user.pesantren?.subscription_status || 'trial',
+        expired_at: user.pesantren?.expired_at,
+        is_homeroom: false,
+        homeroom_classes: [],
+        homeroom_class_ids: [],
+        is_tahfidz_teacher: false,
+        can_manage_quran: false,
+        can_manage_kitab: false,
+        koperasi_outlet_id: user.koperasi_outlet_id,
+        koperasi_outlet_name: (user as any).koperasi_outlet?.name,
+      },
+    };
+  }
 }
+
+
+

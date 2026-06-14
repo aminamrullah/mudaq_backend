@@ -140,4 +140,11 @@ export class PpdbService {
     });
     return { is_active: pesantren?.ppdb_is_active || false };
   }
+
+  async getTenantWithAddon(tenantUuid: string) {
+    return this.prisma.pesantren.findUnique({
+      where: { id: tenantUuid },
+      select: { addon_ppdb: true },
+    });
+  }
 }

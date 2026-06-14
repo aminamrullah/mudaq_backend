@@ -90,17 +90,15 @@ export class PayrollService {
       return count;
     };
 
-    // Fetch all employees
+    // Fetch all active employees
     const users = await this.prisma.user.findMany({
       where: {
         tenant_uuid: tenantUuid,
         is_active: true,
-        role: { in: ['USTAD', 'STAFF_PESANTREN', 'FINANCE_PESANTREN', 'ADMIN_PESANTREN'] },
       },
       include: { 
         teacher: {
           include: { 
-            schedules: true,
             attendances: {
               where: {
                 date: { gte: startDate, lte: endDate },
@@ -108,7 +106,19 @@ export class PayrollService {
               }
             }
           }
-        } 
+        },
+        work_attendances: {
+          where: {
+            date: { gte: startDate, lte: endDate },
+            status: 'hadir'
+          }
+        },
+        work_overtimes: {
+          where: {
+            date: { gte: startDate, lte: endDate },
+            status: 'approved'
+          }
+        }
       },
     });
 
@@ -117,27 +127,34 @@ export class PayrollService {
 
     for (const user of users) {
       const baseSalary = Number(user.base_salary) || 0;
-      let deduction = 0;
-      let notes = `Gaji Pokok: ${user.role}`;
+      const workAttendanceRate = Number((user as any).work_attendance_rate) || 0;
+      const overtimeRate = Number((user as any).overtime_rate) || 0;
+      const teachingRate = user.teacher ? (Number((user.teacher as any).teaching_attendance_rate) || 0) : 0;
 
-      if (user.role === 'USTAD' && user.teacher) {
-        const schedules = user.teacher.schedules || [];
-        let expectedMeetings = 0;
-        for (const s of schedules) {
-          expectedMeetings += countDayOccurrences(year, month, s.day_of_week);
-        }
+      const workAttendanceCount = (user as any).work_attendances?.length || 0;
+      const workAttendanceAllowance = workAttendanceCount * workAttendanceRate;
+      
+      let totalOvertimeHours = 0;
+      const overtimes = (user as any).work_overtimes || [];
+      for (const ot of overtimes) {
+        totalOvertimeHours += Number(ot.duration_hours);
+      }
+      const overtimeAllowance = totalOvertimeHours * overtimeRate;
 
-        if (expectedMeetings > 0) {
-          const actualMeetings = user.teacher.attendances.length;
-          const missingMeetings = Math.max(0, expectedMeetings - actualMeetings);
-          const ratePerMeeting = baseSalary / expectedMeetings;
-          deduction = missingMeetings * ratePerMeeting;
-          
-          notes = `Hadir: ${actualMeetings}/${expectedMeetings}. Potongan: ${missingMeetings} x Rp${Math.round(ratePerMeeting).toLocaleString('id-ID')}`;
-        }
+      let teachingAllowance = 0;
+      const teachingCount = user.teacher?.attendances?.length || 0;
+      if (user.teacher) {
+        teachingAllowance = teachingCount * teachingRate;
       }
 
-      const total = baseSalary - deduction;
+      const totalAllowances = workAttendanceAllowance + overtimeAllowance + teachingAllowance;
+      
+      let notes = `Gaji Pokok: Rp${baseSalary.toLocaleString('id-ID')}`;
+      if (workAttendanceAllowance > 0) notes += ` | Hadir Kerja: ${workAttendanceCount}x = Rp${workAttendanceAllowance.toLocaleString('id-ID')}`;
+      if (overtimeAllowance > 0) notes += ` | Lembur: ${totalOvertimeHours}j = Rp${overtimeAllowance.toLocaleString('id-ID')}`;
+      if (teachingAllowance > 0) notes += ` | Mengajar: ${teachingCount}x = Rp${teachingAllowance.toLocaleString('id-ID')}`;
+
+      const total = baseSalary + totalAllowances;
       totalAmount += total;
       
       itemsData.push({
@@ -145,8 +162,8 @@ export class PayrollService {
         user_id: user.id,
         teacher_id: user.teacher?.id || null,
         base_salary: new Prisma.Decimal(baseSalary),
-        allowances: new Prisma.Decimal(0),
-        deductions: new Prisma.Decimal(deduction),
+        allowances: new Prisma.Decimal(totalAllowances),
+        deductions: new Prisma.Decimal(0),
         total: new Prisma.Decimal(total),
         notes: notes,
       });
@@ -258,7 +275,7 @@ export class PayrollService {
   async payItem(tenantUuid: string, itemId: string, dto: { paymentMethod: 'cash' | 'wallet' }) {
     const item = await this.prisma.payrollItem.findFirst({
       where: { id: itemId, tenant_uuid: tenantUuid },
-      include: { payroll: true }
+      include: { payroll: true, user: { select: { name: true } }, teacher: { select: { name: true } } }
     });
     
     if (!item) throw new NotFoundException('Item payroll tidak ditemukan');
@@ -269,6 +286,9 @@ export class PayrollService {
       const amount = new Prisma.Decimal(item.total);
 
       if (dto.paymentMethod === 'wallet') {
+        if (amount.lessThanOrEqualTo(0)) {
+          throw new BadRequestException('Gaji bernilai 0 atau negatif tidak dapat dibayarkan via Wallet.');
+        }
         // 1. Check Tenant Wallet Balance
         const tenantWallet = await tx.tenantWallet.findUnique({
           where: { tenant_uuid: tenantUuid },
@@ -334,6 +354,19 @@ export class PayrollService {
         });
       }
 
+      // Create Expenditure record
+      await tx.expenditure.create({
+        data: {
+          tenant_uuid: tenantUuid,
+          title: `Gaji: ${item.user?.name || item.teacher?.name || 'Karyawan'} (${item.payroll.period})`,
+          amount: amount,
+          category: 'Payroll',
+          description: `Pembayaran gaji periode ${item.payroll.period} via ${dto.paymentMethod}`,
+          date: new Date(),
+          payment_method: dto.paymentMethod
+        }
+      });
+
       // 5. Update Payroll Item
       const updatedItem = await tx.payrollItem.update({
         where: { id: itemId },
@@ -374,25 +407,45 @@ export class PayrollService {
       });
 
       // Update all unpaid items to paid via cash
-      await tx.payrollItem.updateMany({
+      const unpaidItems = await tx.payrollItem.findMany({
         where: { payroll_id: id, payment_status: 'pending' },
-        data: { payment_status: 'paid', payment_method: 'cash', paid_at: new Date() },
       });
+      
+      if (unpaidItems.length > 0) {
+        const totalUnpaid = unpaidItems.reduce((sum, item) => sum + Number(item.total), 0);
 
-      // 2. Create financial expenditure record
-      await tx.expenditure.create({
-        data: {
-          tenant_uuid: tenantUuid,
-          title: `Payroll Periode ${payroll.period}`,
-          amount: payroll.total_amount,
-          category: 'Payroll',
-          description: `Pembayaran massal gaji karyawan (Cash) untuk periode ${payroll.period}. Total ${payroll.items.length} penerima.`,
-          date: new Date(),
-          payment_method: 'cash'
-        }
-      });
+        await tx.payrollItem.updateMany({
+          where: { payroll_id: id, payment_status: 'pending' },
+          data: { payment_status: 'paid', payment_method: 'cash', paid_at: new Date() },
+        });
+
+        // 2. Create financial expenditure record
+        await tx.expenditure.create({
+          data: {
+            tenant_uuid: tenantUuid,
+            title: `Payroll Periode ${payroll.period}`,
+            amount: totalUnpaid,
+            category: 'Payroll',
+            description: `Pembayaran gaji karyawan (Cash) untuk periode ${payroll.period}. Total ${unpaidItems.length} penerima.`,
+            date: new Date(),
+            payment_method: 'cash'
+          }
+        });
+      }
 
       return updatedPayroll;
+    });
+  }
+
+  async findMyPayrolls(tenantUuid: string, userId: string) {
+    return this.prisma.payrollItem.findMany({
+      where: { tenant_uuid: tenantUuid, user_id: userId, payment_status: 'paid' },
+      include: {
+        payroll: true,
+        user: { select: { name: true, role: true } },
+        teacher: { select: { name: true } },
+      },
+      orderBy: { payroll: { period: 'desc' } },
     });
   }
 }

@@ -60,8 +60,9 @@ export class UserController {
     @Query('page') page?: number,
     @Query('limit') limit?: number,
     @Query('role') role?: string,
+    @Query('unit_id') unitId?: string,
   ) {
-    return this.userService.findAll(tenantUuid, page, limit, role);
+    return this.userService.findAll(tenantUuid, page, limit, role, unitId);
   }
 
   @Get(':id')

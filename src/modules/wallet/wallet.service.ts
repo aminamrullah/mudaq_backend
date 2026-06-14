@@ -11,6 +11,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { MailService } from '../mail/mail.service';
+import { XenditService } from '../tenant/xendit.service';
 import PDFDocument = require('pdfkit');
 
 @Injectable()
@@ -20,7 +21,54 @@ export class WalletService {
     private prisma: PrismaService,
     private config: ConfigService,
     private mailService: MailService,
+    private xenditService: XenditService,
   ) {}
+
+  private resolveXenditBankChannel(bankName?: string, bankChannelCode?: string) {
+    if (bankChannelCode) return bankChannelCode.toUpperCase();
+    const normalized = (bankName || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const map: Record<string, string> = {
+      BCA: 'ID_BCA',
+      BANKBCA: 'ID_BCA',
+      BNI: 'ID_BNI',
+      BANKBNI: 'ID_BNI',
+      BRI: 'ID_BRI',
+      BANKBRI: 'ID_BRI',
+      MANDIRI: 'ID_MANDIRI',
+      BANKMANDIRI: 'ID_MANDIRI',
+      PERMATA: 'ID_PERMATA',
+      BANKPERMATA: 'ID_PERMATA',
+      CIMB: 'ID_CIMB',
+      CIMBNIAGA: 'ID_CIMB',
+      BANKCIMBNIAGA: 'ID_CIMB',
+      BSI: 'ID_BSI',
+      BANKBSI: 'ID_BSI',
+      BTN: 'ID_BTN',
+      BANKBTN: 'ID_BTN',
+    };
+    return map[normalized] || '';
+  }
+
+  private mapPayoutStatus(status?: string) {
+    const normalized = (status || '').toUpperCase();
+    if (['SUCCEEDED', 'COMPLETED', 'SUCCESS'].includes(normalized)) return 'succeeded';
+    if (['FAILED', 'CANCELLED', 'EXPIRED'].includes(normalized)) return 'failed';
+    return 'processing';
+  }
+
+  // Helper to fetch current gateway (Xendit sub‑account) balance for a tenant
+  private async getGatewayBalance(tenantUuid: string): Promise<number> {
+    const pesantren = await this.prisma.pesantren.findUnique({
+      where: { id: tenantUuid },
+      select: { xendit_sub_account_id: true },
+    });
+    if (!pesantren?.xendit_sub_account_id) {
+      throw new BadRequestException('Pesantren belum memiliki Xendit sub‑account.');
+    }
+    const balanceObj = await this.xenditService.getBalanceForSubAccount(pesantren.xendit_sub_account_id);
+    const available = (balanceObj as any).available_balance ?? (balanceObj as any).balance ?? 0;
+    return Number(available);
+  }
 
   async getWallets(tenantUuid: string, parentPhone?: string) {
     const where: any = { tenant_uuid: tenantUuid, deleted_at: null };
@@ -112,9 +160,13 @@ export class WalletService {
   }
 
   async createManualTopup(tenantUuid: string, dto: TopupDto) {
+    if (dto.source === 'tenant_float') {
+      return this.distributeTenantWalletToUser(tenantUuid, dto);
+    }
+
     const pesantren = await this.prisma.pesantren.findUnique({
       where: { id: tenantUuid },
-      select: { manual_topup_fee: true, min_tenant_wallet_balance: true },
+      select: { manual_topup_fee: true },
     });
 
     const wallet = await this.prisma.wallet.findFirst({
@@ -130,7 +182,6 @@ export class WalletService {
     const adminFee = pesantren?.manual_topup_fee || new Prisma.Decimal(0);
 
     return this.prisma.$transaction(async (tx) => {
-      // 1. Get and check Tenant Wallet
       let tenantWallet = await tx.tenantWallet.findUnique({
         where: { tenant_uuid: tenantUuid },
       });
@@ -140,35 +191,8 @@ export class WalletService {
         });
       }
 
-      const minBalance = Number(pesantren?.min_tenant_wallet_balance || 0);
-      if (Number(tenantWallet.balance) - Number(amount) < minBalance) {
-        throw new BadRequestException(
-          'Saldo Induk Pesantren tidak mencukupi untuk top up ini (Terpotong Saldo Mengendap).'
-        );
-      }
-
-      // 2. Deduct Tenant Wallet
-      const tenantBalanceBefore = tenantWallet.balance;
-      const tenantBalanceAfter = Prisma.Decimal.sub(tenantBalanceBefore, amount);
-      await tx.tenantWallet.update({
-        where: { id: tenantWallet.id },
-        data: { balance: tenantBalanceAfter },
-      });
-
-      // 3. Record Tenant Wallet Transaction
-      await tx.tenantWalletTransaction.create({
-        data: {
-          tenant_uuid: tenantUuid,
-          type: 'student_topup',
-          amount: amount,
-          balance_before: tenantBalanceBefore,
-          balance_after: tenantBalanceAfter,
-          reference: `TOPUP-${Date.now()}`,
-          description: `Top up manual ke dompet santri (Wallet ID: ${wallet.id})`,
-        },
-      });
-
-      // 4. Update student wallet balance
+      // Cash top-up means the tenant receives physical/offline money from the user.
+      // It must not deduct tenant float or touch Mudaq's master balance.
       const balanceBefore = wallet.balance;
       const balanceAfter = Prisma.Decimal.add(balanceBefore, amount);
       const updated = await tx.wallet.update({
@@ -185,8 +209,97 @@ export class WalletService {
           amount: amount,
           balance_before: balanceBefore,
           balance_after: balanceAfter,
-          reference: `MANUAL-${Date.now()}`,
-          description: `Top up tunai oleh Admin (Biaya Admin: ${adminFee})`,
+          reference: `CASH-TOPUP-${Date.now()}`,
+          description: dto.description || `Top up tunai diterima tenant (Biaya Admin: ${adminFee})`,
+        },
+      });
+
+      await tx.tenantWalletTransaction.create({
+        data: {
+          tenant_uuid: tenantUuid,
+          type: 'cash_student_topup',
+          amount: amount,
+          balance_before: tenantWallet.balance,
+          balance_after: tenantWallet.balance,
+          reference: `CASH-TOPUP-${Date.now()}`,
+          description: `Uang tunai diterima tenant untuk top up dompet santri (Wallet ID: ${wallet.id})`,
+        },
+      });
+
+      return updated;
+    });
+  }
+
+  async distributeTenantWalletToUser(tenantUuid: string, dto: TopupDto) {
+    const pesantren = await this.prisma.pesantren.findUnique({
+      where: { id: tenantUuid },
+      select: { min_tenant_wallet_balance: true },
+    });
+
+    const wallet = await this.prisma.wallet.findFirst({
+      where: {
+        id: dto.wallet_id,
+        tenant_uuid: tenantUuid,
+        student: { deleted_at: null }
+      },
+    });
+    if (!wallet) throw new NotFoundException('Dompet tidak ditemukan');
+
+    const amount = new Prisma.Decimal(dto.amount);
+
+    return this.prisma.$transaction(async (tx) => {
+      let tenantWallet = await tx.tenantWallet.findUnique({
+        where: { tenant_uuid: tenantUuid },
+      });
+      if (!tenantWallet) {
+        tenantWallet = await tx.tenantWallet.create({
+          data: { tenant_uuid: tenantUuid, balance: 0 },
+        });
+      }
+
+      const minBalance = Number(pesantren?.min_tenant_wallet_balance || 0);
+      if (Number(tenantWallet.balance) - Number(amount) < minBalance) {
+        throw new BadRequestException(
+          'Saldo Induk Pesantren tidak mencukupi untuk distribusi saldo ini (termasuk saldo mengendap).'
+        );
+      }
+
+      const tenantBalanceBefore = tenantWallet.balance;
+      const tenantBalanceAfter = Prisma.Decimal.sub(tenantBalanceBefore, amount);
+      await tx.tenantWallet.update({
+        where: { id: tenantWallet.id },
+        data: { balance: tenantBalanceAfter },
+      });
+
+      await tx.tenantWalletTransaction.create({
+        data: {
+          tenant_uuid: tenantUuid,
+          type: 'tenant_float_distribution',
+          amount: amount,
+          balance_before: tenantBalanceBefore,
+          balance_after: tenantBalanceAfter,
+          reference: `DIST-${Date.now()}`,
+          description: dto.description || `Distribusi saldo induk tenant ke dompet user (Wallet ID: ${wallet.id})`,
+        },
+      });
+
+      const balanceBefore = wallet.balance;
+      const balanceAfter = Prisma.Decimal.add(balanceBefore, amount);
+      const updated = await tx.wallet.update({
+        where: { id: wallet.id },
+        data: { balance: balanceAfter },
+      });
+
+      await tx.walletTransaction.create({
+        data: {
+          tenant_uuid: tenantUuid,
+          wallet_id: wallet.id,
+          type: 'deposit',
+          amount: amount,
+          balance_before: balanceBefore,
+          balance_after: balanceAfter,
+          reference: `DIST-${Date.now()}`,
+          description: dto.description || 'Distribusi saldo dari Saldo Induk Pesantren',
         },
       });
 
@@ -290,21 +403,24 @@ export class WalletService {
         const isQRIS = dto.payment_channel === 'QRIS';
 
         if (isQRIS && wallet.student.pesantren?.qris_fee_is_percent) {
-          const surchargePercent = Number(wallet.student.pesantren.qris_surcharge_fee || 0);
-          const platformPercent = Number(wallet.student.pesantren.qris_platform_fee || 0);
-
-          surcharge = Math.round(Number(dto.amount) * (surchargePercent / 100));
-          const totalWithSurcharge = Number(dto.amount) + surcharge;
-          
-          const rawPlatformFeeAmount = Math.round(totalWithSurcharge * (platformPercent / 100));
-          const estimatedXenditFee = Math.round(totalWithSurcharge * 0.007 * 1.11);
-          platformFeeAmount = Math.max(0, rawPlatformFeeAmount - estimatedXenditFee);
+          const baseAmount = Number(dto.amount);
+          const xenditFeeUser = Math.round(baseAmount * (Number(wallet.student.pesantren.qris_xendit_fee_user || 0) / 100));
+          const platformFeeUser = Math.round(baseAmount * (Number(wallet.student.pesantren.qris_platform_fee_user || 0) / 100));
+          const platformFeeTenant = Math.round(baseAmount * (Number(wallet.student.pesantren.qris_platform_fee_tenant || 0) / 100));
+          surcharge = xenditFeeUser + platformFeeUser;
+          platformFeeAmount = platformFeeUser + platformFeeTenant;
         } else {
-          surcharge = isQRIS ? Number(wallet.student.pesantren?.qris_surcharge_fee || 0) : Number(wallet.student.pesantren?.surcharge_fee || 0);
-          const rawPlatformFeeAmount = isQRIS ? Number(wallet.student.pesantren?.qris_platform_fee || 0) : Number(wallet.student.pesantren?.platform_fee || 0);
-          
-          const estimatedXenditFee = isQRIS ? Math.round((Number(dto.amount) + surcharge) * 0.007 * 1.11) : Math.round(4500 * 1.11);
-          platformFeeAmount = Math.max(0, rawPlatformFeeAmount - estimatedXenditFee);
+          const xenditFeeUser = isQRIS
+            ? Number(wallet.student.pesantren?.qris_xendit_fee_user || wallet.student.pesantren?.qris_surcharge_fee || 0)
+            : Number(wallet.student.pesantren?.xendit_fee_user || wallet.student.pesantren?.surcharge_fee || 0);
+          const platformFeeUser = isQRIS
+            ? Number(wallet.student.pesantren?.qris_platform_fee_user || 0)
+            : Number(wallet.student.pesantren?.platform_fee_user || 0);
+          const platformFeeTenant = isQRIS
+            ? Number(wallet.student.pesantren?.qris_platform_fee_tenant || wallet.student.pesantren?.qris_platform_fee || 0)
+            : Number(wallet.student.pesantren?.platform_fee_tenant || wallet.student.pesantren?.platform_fee || 0);
+          surcharge = xenditFeeUser + platformFeeUser;
+          platformFeeAmount = platformFeeUser + platformFeeTenant;
         }
 
         const totalAmount = Number(dto.amount) + surcharge;
@@ -463,7 +579,6 @@ export class WalletService {
     const amount = new Prisma.Decimal(dto.amount);
 
     return this.prisma.$transaction(async (tx) => {
-      // 1. Get or Create Tenant Wallet
       let tenantWallet = await tx.tenantWallet.findUnique({
         where: { tenant_uuid: tenantUuid },
       });
@@ -476,13 +591,11 @@ export class WalletService {
       const balanceBefore = wallet.balance;
       const balanceAfter = Prisma.Decimal.sub(balanceBefore, amount);
 
-      // 2. Update student wallet balance
       const updated = await tx.wallet.update({
         where: { id: wallet.id },
         data: { balance: balanceAfter },
       });
 
-      // 3. Create student transaction record
       await tx.walletTransaction.create({
         data: {
           tenant_uuid: tenantUuid,
@@ -496,24 +609,17 @@ export class WalletService {
         },
       });
 
-      // 4. Add to Tenant Wallet
-      const tenantBalanceBefore = tenantWallet.balance;
-      const tenantBalanceAfter = Prisma.Decimal.add(tenantBalanceBefore, amount);
-      await tx.tenantWallet.update({
-        where: { id: tenantWallet.id },
-        data: { balance: tenantBalanceAfter },
-      });
-
-      // 5. Record Tenant Wallet Transaction
+      // Cash withdrawal means the tenant pays physical/offline money to the user.
+      // The user balance decreases, while tenant float remains unchanged.
       await tx.tenantWalletTransaction.create({
         data: {
           tenant_uuid: tenantUuid,
-          type: 'student_withdraw',
+          type: 'cash_student_withdrawal',
           amount: amount,
-          balance_before: tenantBalanceBefore,
-          balance_after: tenantBalanceAfter,
+          balance_before: tenantWallet.balance,
+          balance_after: tenantWallet.balance,
           reference: `WD-${Date.now()}`,
-          description: `Tarik tunai dari dompet santri (Wallet ID: ${wallet.id})`,
+          description: `Tarik tunai dari dompet user, dibayar oleh kas tenant (Wallet ID: ${wallet.id})`,
         },
       });
 
@@ -611,6 +717,128 @@ export class WalletService {
     return wallet;
   }
 
+  async getTenantFinanceSummary(tenantUuid: string) {
+    const [pesantren, tenantWallet, studentWalletSum, staffWalletSum, cashIn, staffCashIn, cashOut, staffCashOut, recentCashEntries] =
+      await Promise.all([
+        this.prisma.pesantren.findUnique({
+          where: { id: tenantUuid },
+          select: {
+            id: true,
+            name: true,
+            xendit_sub_account_id: true,
+            platform_fee: true,
+            qris_platform_fee: true,
+            surcharge_fee: true,
+            qris_surcharge_fee: true,
+            xendit_fee_user: true,
+            platform_fee_user: true,
+            platform_fee_tenant: true,
+            qris_xendit_fee_user: true,
+            qris_platform_fee_user: true,
+            qris_platform_fee_tenant: true,
+          },
+        }),
+        this.prisma.tenantWallet.findUnique({ where: { tenant_uuid: tenantUuid } }),
+        this.prisma.wallet.aggregate({
+          where: { tenant_uuid: tenantUuid, student: { deleted_at: null } },
+          _sum: { balance: true },
+        }),
+        this.prisma.userWallet.aggregate({
+          where: { tenant_uuid: tenantUuid, user: { deleted_at: null } },
+          _sum: { balance: true },
+        }),
+        this.prisma.tenantWalletTransaction.aggregate({
+          where: { tenant_uuid: tenantUuid, type: 'cash_student_topup' },
+          _sum: { amount: true },
+        }),
+        this.prisma.tenantWalletTransaction.aggregate({
+          where: { tenant_uuid: tenantUuid, type: 'user_cash_topup' },
+          _sum: { amount: true },
+        }),
+        this.prisma.tenantWalletTransaction.aggregate({
+          where: { tenant_uuid: tenantUuid, type: 'cash_student_withdrawal' },
+          _sum: { amount: true },
+        }),
+        this.prisma.tenantWalletTransaction.aggregate({
+          where: { tenant_uuid: tenantUuid, type: 'user_cash_withdrawal' },
+          _sum: { amount: true },
+        }),
+        this.prisma.tenantWalletTransaction.findMany({
+          where: {
+            tenant_uuid: tenantUuid,
+            type: { in: ['cash_student_topup', 'cash_student_withdrawal', 'user_cash_topup', 'user_cash_withdrawal'] },
+          },
+          orderBy: { created_at: 'desc' },
+          take: 10,
+        }),
+      ]);
+
+    if (!pesantren) throw new NotFoundException('Pesantren tidak ditemukan');
+
+    const gatewayBalance = await this.xenditService.getBalanceForSubAccount(
+      pesantren.xendit_sub_account_id,
+    );
+
+    const gatewayAvailable = Number(
+      (gatewayBalance as any).available_balance ??
+        (gatewayBalance as any).balance ??
+        0,
+    );
+    const tenantFloat = Number(tenantWallet?.balance || 0);
+    const studentWalletLiability = Number(studentWalletSum._sum.balance || 0);
+    const staffWalletLiability = Number(staffWalletSum._sum.balance || 0);
+    const userLiability = studentWalletLiability + staffWalletLiability;
+    const cashInAmount = Number(cashIn._sum.amount || 0) + Number(staffCashIn._sum.amount || 0);
+    const cashOutAmount = Number(cashOut._sum.amount || 0) + Number(staffCashOut._sum.amount || 0);
+    const cashOnHandEstimate = cashInAmount - cashOutAmount;
+    const internalLiability = tenantFloat + userLiability;
+    const backedByGatewayAndCash = gatewayAvailable + cashOnHandEstimate;
+
+    return {
+      tenant: {
+        id: pesantren.id,
+        name: pesantren.name,
+        xendit_sub_account_id: pesantren.xendit_sub_account_id,
+        xendit_configured: !!pesantren.xendit_sub_account_id,
+      },
+      gateway: {
+        balance: gatewayAvailable,
+        raw: gatewayBalance,
+        note: 'Saldo sub-account Xendit tenant. Fee platform Mudaq yang dikirim via Xendit fees tidak termasuk saldo ini.',
+      },
+      internal: {
+        tenant_float: tenantFloat,
+        user_wallet_liability: userLiability,
+        student_wallet_liability: studentWalletLiability,
+        staff_wallet_liability: staffWalletLiability,
+        total_liability: internalLiability,
+      },
+      cash_book: {
+        cash_in: cashInAmount,
+        cash_out: cashOutAmount,
+        cash_on_hand_estimate: cashOnHandEstimate,
+        recent_entries: recentCashEntries,
+      },
+      reconciliation: {
+        backed_by_gateway_and_cash: backedByGatewayAndCash,
+        internal_liability: internalLiability,
+        difference: backedByGatewayAndCash - internalLiability,
+      },
+      fees: {
+        va_platform_fee: Number(pesantren.platform_fee || 0),
+        qris_platform_fee: Number(pesantren.qris_platform_fee || 0),
+        va_surcharge_fee: Number(pesantren.surcharge_fee || 0),
+        qris_surcharge_fee: Number(pesantren.qris_surcharge_fee || 0),
+        va_xendit_fee_user: Number(pesantren.xendit_fee_user || 0),
+        va_platform_fee_user: Number(pesantren.platform_fee_user || 0),
+        va_platform_fee_tenant: Number(pesantren.platform_fee_tenant || 0),
+        qris_xendit_fee_user: Number(pesantren.qris_xendit_fee_user || 0),
+        qris_platform_fee_user: Number(pesantren.qris_platform_fee_user || 0),
+        qris_platform_fee_tenant: Number(pesantren.qris_platform_fee_tenant || 0),
+      },
+    };
+  }
+
   async topupTenantWallet(tenantUuid: string, dto: { amount: number; description?: string }) {
     const amount = new Prisma.Decimal(dto.amount);
     return this.prisma.$transaction(async (tx) => {
@@ -629,12 +857,12 @@ export class WalletService {
       await tx.tenantWalletTransaction.create({
         data: {
           tenant_uuid: tenantUuid,
-          type: 'deposit_from_superadmin',
+          type: 'tenant_operational_deposit',
           amount: amount,
           balance_before: balanceBefore,
           balance_after: balanceAfter,
           reference: `SA-TOPUP-${Date.now()}`,
-          description: dto.description || 'Top up Saldo Induk oleh Superadmin',
+          description: dto.description || 'Deposit dana operasional tenant ke Saldo Induk Pesantren',
         },
       });
       return updated;
@@ -663,219 +891,157 @@ export class WalletService {
       await tx.tenantWalletTransaction.create({
         data: {
           tenant_uuid: tenantUuid,
-          type: 'withdraw_to_superadmin',
+          type: 'tenant_operational_withdrawal',
           amount: amount,
           balance_before: balanceBefore,
           balance_after: balanceAfter,
           reference: `SA-WD-${Date.now()}`,
-          description: dto.description || 'Penarikan Saldo Induk oleh Superadmin',
+          description: dto.description || 'Pencairan/pengurangan dana operasional tenant dari Saldo Induk Pesantren',
         },
       });
       return updated;
     });
   }
 
-  async createTenantTopupRequest(tenantUuid: string, amount: number, proof_url?: string) {
-    if (amount <= 0) throw new BadRequestException('Jumlah top up tidak valid');
+  async createTenantWithdrawalRequest(
+    tenantUuid: string,
+    dto: {
+      amount: number;
+      bank_channel_code?: string;
+      bank_name: string;
+      account_no: string;
+      account_name: string;
+      notes?: string;
+    },
+  ) {
+    if (!dto.amount || dto.amount <= 0) {
+      throw new BadRequestException('Jumlah penarikan tidak valid');
+    }
 
-    const pesantren = await this.prisma.pesantren.findUnique({ where: { id: tenantUuid } });
+    const pesantren = await this.prisma.pesantren.findUnique({
+      where: { id: tenantUuid },
+    });
     if (!pesantren) throw new NotFoundException('Pesantren tidak ditemukan');
+    if (pesantren.subscription_status !== 'active') {
+      throw new BadRequestException('Penarikan dana gateway hanya bisa dilakukan jika status pesantren AKTIF.');
+    }
+    if (!pesantren.xendit_sub_account_id) {
+      throw new BadRequestException('Pesantren belum memiliki Xendit sub-account.');
+    }
+    // Validate gateway balance before creating request
+    const gatewayBalance = await this.getGatewayBalance(tenantUuid);
+    if (gatewayBalance < dto.amount) {
+      throw new BadRequestException('Saldo gateway tidak mencukupi');
+    }
 
-    const request = await this.prisma.tenantTopupRequest.create({
+    const bankChannelCode = this.resolveXenditBankChannel(dto.bank_name, dto.bank_channel_code);
+    if (!bankChannelCode) {
+      throw new BadRequestException('Kode channel bank Xendit wajib diisi, contoh: ID_BCA.');
+    }
+
+    const request = await this.prisma.tenantWithdrawalRequest.create({
       data: {
         tenant_uuid: tenantUuid,
-        amount,
-        proof_url,
+        amount: dto.amount,
+        bank_channel_code: bankChannelCode,
+        bank_name: dto.bank_name,
+        account_no: dto.account_no,
+        account_name: dto.account_name,
+        notes: dto.notes,
         status: 'pending',
-      },
+      } as any,
+    });
+
+    await this.prisma.pesantren.update({
+      where: { id: tenantUuid },
+      data: {
+        gateway_bank_channel_code: bankChannelCode,
+        gateway_bank_name: dto.bank_name,
+        gateway_bank_account_no: dto.account_no,
+        gateway_bank_account_name: dto.account_name,
+      } as any,
     });
 
     return {
-      message: 'Permintaan top up berhasil dibuat, menunggu persetujuan Superadmin.',
+      message: 'Permintaan pencairan dana gateway berhasil dibuat dan menunggu persetujuan Superadmin.',
       request,
     };
   }
 
-  async getTenantMyTopupRequests(tenantUuid: string) {
-    return this.prisma.tenantTopupRequest.findMany({
-      where: { tenant_uuid: tenantUuid },
-      orderBy: { created_at: 'desc' },
-    });
-  }
-
-  async approveTenantTopupRequest(requestId: string, isApproved: boolean) {
-    return this.prisma.$transaction(async (tx) => {
-      const request = await tx.tenantTopupRequest.findUnique({
-        where: { id: requestId },
-      });
-
-      if (!request) throw new NotFoundException('Permintaan top up tidak ditemukan');
-      if (request.status !== 'pending') throw new BadRequestException('Permintaan ini sudah diproses');
-
-      if (!isApproved) {
-        return tx.tenantTopupRequest.update({
-          where: { id: requestId },
-          data: { status: 'rejected' },
-        });
-      }
-
-      // If approved, add balance and log transaction
-      const wallet = await tx.tenantWallet.findUnique({ where: { tenant_uuid: request.tenant_uuid } });
-      if (!wallet) throw new NotFoundException('Dompet induk pesantren tidak ditemukan');
-
-      const balanceBefore = wallet.balance;
-      const balanceAfter = Prisma.Decimal.add(balanceBefore, request.amount);
-
-      await tx.tenantWallet.update({
-        where: { id: wallet.id },
-        data: { balance: balanceAfter },
-      });
-
-      await tx.tenantWalletTransaction.create({
-        data: {
-          tenant_uuid: request.tenant_uuid,
-          type: 'deposit',
-          amount: request.amount,
-          balance_before: balanceBefore,
-          balance_after: balanceAfter,
-          description: 'Topup Saldo Induk disetujui',
-          reference: request.id,
-        },
-      });
-
-      return tx.tenantTopupRequest.update({
-        where: { id: requestId },
-        data: { status: 'approved' },
-      });
-    });
-  }
-
-  async getTenantTopupRequests(filters: { status?: string }) {
-    const where: any = {};
-    if (filters.status) where.status = filters.status;
-
-    return this.prisma.tenantTopupRequest.findMany({
-      where,
-      include: {
-        pesantren: { select: { name: true, domain: true } },
-      },
-      orderBy: { created_at: 'desc' },
-    });
-  }
-
-  async createTenantWithdrawalRequest(tenantUuid: string, dto: { amount: number; bank_name: string; account_no: string; account_name: string; notes?: string }) {
-    return this.prisma.$transaction(async (tx) => {
-      const pesantren = await tx.pesantren.findUnique({ where: { id: tenantUuid } });
-      
-      if (pesantren?.subscription_status !== 'active') {
-        throw new BadRequestException('Penarikan dana Saldo Induk hanya bisa dilakukan jika status pesantren AKTIF.');
-      }
-
-      const wallet = await tx.tenantWallet.findUnique({ where: { tenant_uuid: tenantUuid } });
-      const minBalance = Number(pesantren?.min_tenant_wallet_balance || 0);
-
-      if (!wallet || Number(wallet.balance) - Number(dto.amount) < minBalance) {
-        throw new BadRequestException(`Saldo Induk tidak mencukupi (termasuk minimal saldo mengendap Rp${minBalance})`);
-      }
-
-      const balanceBefore = wallet.balance;
-      const balanceAfter = Prisma.Decimal.sub(balanceBefore, dto.amount);
-
-      await tx.tenantWallet.update({
-        where: { id: wallet.id },
-        data: { balance: balanceAfter },
-      });
-
-      const request = await tx.tenantWithdrawalRequest.create({
-        data: {
-          tenant_uuid: tenantUuid,
-          amount: dto.amount,
-          bank_name: dto.bank_name,
-          account_no: dto.account_no,
-          account_name: dto.account_name,
-          notes: dto.notes,
-          status: 'pending',
-        },
-      });
-
-      await tx.tenantWalletTransaction.create({
-        data: {
-          tenant_uuid: tenantUuid,
-          type: 'withdraw_to_superadmin',
-          amount: dto.amount,
-          balance_before: balanceBefore,
-          balance_after: balanceAfter,
-          reference: request.id,
-          description: dto.notes || 'Penarikan Dana (Withdraw) Menunggu Persetujuan',
-        },
-      });
-
-      return { message: 'Permintaan penarikan berhasil dibuat dan saldo ditahan', request };
-    });
-  }
-
   async approveTenantWithdrawalRequest(requestId: string, isApproved: boolean) {
-    const result = await this.prisma.$transaction(async (tx) => {
-      const request = await tx.tenantWithdrawalRequest.findUnique({ 
+    const request = await this.prisma.tenantWithdrawalRequest.findUnique({
+      where: { id: requestId },
+      include: { pesantren: true },
+    });
+    if (!request) throw new NotFoundException('Request tidak ditemukan');
+    if (request.status !== 'pending') throw new BadRequestException('Request sudah diproses');
+
+    if (!isApproved) {
+      await this.prisma.tenantWithdrawalRequest.update({
         where: { id: requestId },
-        include: { pesantren: true }
+        data: { status: 'rejected', processed_at: new Date() } as any,
       });
-      if (!request) throw new NotFoundException('Request tidak ditemukan');
-      if (request.status !== 'pending') throw new BadRequestException('Request sudah diproses');
+      return { message: 'Request ditolak' };
+    }
 
-      if (isApproved) {
-        await tx.tenantWithdrawalRequest.update({
-          where: { id: requestId },
-          data: { status: 'approved' },
-        });
-        // Funds are already deducted, so we just return success
-      } else {
-        await tx.tenantWithdrawalRequest.update({
-          where: { id: requestId },
-          data: { status: 'rejected' },
-        });
+    if (!request.pesantren?.xendit_sub_account_id) {
+      throw new BadRequestException('Pesantren belum memiliki Xendit sub-account.');
+    }
 
-        // Refund the tenant wallet
-        const wallet = await tx.tenantWallet.findUnique({ where: { tenant_uuid: request.tenant_uuid } });
-        if (wallet) {
-          const balanceBefore = wallet.balance;
-          const balanceAfter = Prisma.Decimal.add(balanceBefore, request.amount);
-          
-          await tx.tenantWallet.update({
-            where: { id: wallet.id },
-            data: { balance: balanceAfter },
-          });
+    // Re‑check gateway balance before initiating payout to avoid race conditions
+    const gatewayBalance = await this.getGatewayBalance(request.tenant_uuid);
+    if (gatewayBalance < Number(request.amount)) {
+      throw new BadRequestException('Saldo gateway tidak mencukupi untuk pencairan');
+    }
 
-          await tx.tenantWalletTransaction.create({
-            data: {
-              tenant_uuid: request.tenant_uuid,
-              type: 'deposit_from_superadmin',
-              amount: request.amount,
-              balance_before: balanceBefore,
-              balance_after: balanceAfter,
-              reference: `REF-WD-${request.id.slice(0,8)}`,
-              description: `Pengembalian dana dari Request Penarikan Ditolak`,
-            },
-          });
-        }
-      }
-      return { request, message: isApproved ? 'Request disetujui' : 'Request ditolak (dana dikembalikan)' };
+    const bankChannelCode = this.resolveXenditBankChannel(
+      request.bank_name,
+      (request as any).bank_channel_code,
+    );
+    if (!bankChannelCode) {
+      throw new BadRequestException('Kode channel bank Xendit wajib diisi, contoh: ID_BCA.');
+    }
+
+    const referenceId = (request as any).payout_reference_id || `WD-${request.id}`;
+    const payout = await this.xenditService.createPayoutForSubAccount({
+      subAccountId: request.pesantren.xendit_sub_account_id,
+      referenceId,
+      channelCode: bankChannelCode,
+      accountNumber: request.account_no,
+      accountHolderName: request.account_name,
+      amount: Math.round(Number(request.amount)),
+      description: `Pencairan dana gateway ${request.pesantren.name}`,
+      emailTo: request.pesantren.email || undefined,
     });
 
-    if (isApproved && result.request.pesantren?.email) {
+    const internalStatus = this.mapPayoutStatus(payout.status);
+    const updatedRequest = await this.prisma.tenantWithdrawalRequest.update({
+      where: { id: requestId },
+      data: {
+        status: internalStatus,
+        bank_channel_code: bankChannelCode,
+        xendit_payout_id: payout.id,
+        payout_reference_id: payout.reference_id || referenceId,
+        payout_status: payout.status,
+        processed_at: internalStatus === 'processing' ? null : new Date(),
+      } as any,
+      include: { pesantren: true },
+    });
+
+    if (updatedRequest.pesantren?.email) {
       try {
-        const amountFormatted = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(Number(result.request.amount));
+        const amountFormatted = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(Number(updatedRequest.amount));
         const dateStr = new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });
-        const subject = `Invoice Pencairan Dana - ${result.request.pesantren.name}`;
+        const subject = `Pencairan Dana Gateway Diproses - ${updatedRequest.pesantren.name}`;
         const html = `
           <div style="font-family: sans-serif; padding: 20px; color: #333;">
-            <h2>Invoice / Bukti Pencairan Dana</h2>
-            <p>Halo <strong>${result.request.pesantren.name}</strong>,</p>
-            <p>Permintaan pencairan dana (withdrawal) Anda telah <strong>disetujui</strong> dan diproses oleh Superadmin MUDAQ.</p>
+            <h2>Pencairan Dana Gateway Diproses</h2>
+            <p>Halo <strong>${updatedRequest.pesantren.name}</strong>,</p>
+            <p>Permintaan pencairan dana gateway Anda telah dikirim ke Xendit dan sedang diproses.</p>
             <table style="width: 100%; max-width: 600px; border-collapse: collapse; margin: 20px 0;">
               <tr>
                 <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">ID Transaksi</td>
-                <td style="padding: 10px; border: 1px solid #ddd;">${result.request.id}</td>
+                <td style="padding: 10px; border: 1px solid #ddd;">${updatedRequest.id}</td>
               </tr>
               <tr>
                 <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Tanggal</td>
@@ -883,29 +1049,33 @@ export class WalletService {
               </tr>
               <tr>
                 <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Bank Tujuan</td>
-                <td style="padding: 10px; border: 1px solid #ddd;">${result.request.bank_name}</td>
+                <td style="padding: 10px; border: 1px solid #ddd;">${updatedRequest.bank_name}</td>
               </tr>
               <tr>
                 <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">No. Rekening</td>
-                <td style="padding: 10px; border: 1px solid #ddd;">${result.request.account_no}</td>
+                <td style="padding: 10px; border: 1px solid #ddd;">${updatedRequest.account_no}</td>
               </tr>
               <tr>
                 <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Atas Nama</td>
-                <td style="padding: 10px; border: 1px solid #ddd;">${result.request.account_name}</td>
+                <td style="padding: 10px; border: 1px solid #ddd;">${updatedRequest.account_name}</td>
+              </tr>
+              <tr>
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Status Xendit</td>
+                <td style="padding: 10px; border: 1px solid #ddd;">${payout.status}</td>
               </tr>
               <tr>
                 <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold; font-size: 16px;">Nominal Pencairan</td>
                 <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold; font-size: 16px; color: #10b981;">${amountFormatted}</td>
               </tr>
             </table>
-            <p>Dana akan segera masuk ke rekening tujuan Anda sesuai dengan estimasi waktu dari pihak bank.</p>
+            <p>Status final akan disinkronkan otomatis melalui webhook Xendit.</p>
             <p>Terima kasih telah menggunakan layanan MUDAQ.</p>
             <br/>
             <p>Salam,</p>
             <p><strong>Tim MUDAQ</strong></p>
           </div>
         `;
-        this.mailService.sendMail(result.request.pesantren.email, subject, html).catch(e => {
+        this.mailService.sendMail(updatedRequest.pesantren.email, subject, html).catch(e => {
           this.logger.error('Failed to send withdrawal invoice email', e);
         });
       } catch (e) {
@@ -913,126 +1083,15 @@ export class WalletService {
       }
     }
 
-    return { message: result.message };
-  }
-
-  async generateTopupInvoiceHtml(id: string): Promise<string> {
-    const req = await this.prisma.tenantTopupRequest.findUnique({ where: { id }, include: { pesantren: true } });
-    if (!req) throw new NotFoundException('Request tidak ditemukan');
-    if (req.status !== 'approved') throw new BadRequestException('Hanya request yang disetujui yang memiliki invoice');
-
-    const amount = Number(req.amount).toLocaleString('id-ID');
-    const date = new Date(req.created_at).toLocaleDateString('id-ID', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-    });
-    const time = new Date(req.created_at).toLocaleTimeString('id-ID', {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-
-    return `
-      <!DOCTYPE html>
-      <html lang="id">
-      <head>
-          <meta charset="UTF-8">
-          <title>Invoice Top Up Saldo Induk - ${req.id}</title>
-          <style>
-              body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #333; line-height: 1.6; padding: 20px; background: #f9f9f9; }
-              .invoice-box { max-width: 800px; margin: auto; padding: 30px; border: 1px solid #eee; background: #fff; box-shadow: 0 0 10px rgba(0, 0, 0, 0.15); border-radius: 8px; }
-              .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #8b5cf6; padding-bottom: 20px; margin-bottom: 20px; }
-              .logo-container { display: flex; align-items: center; gap: 15px; }
-              .logo { width: 60px; height: 60px; object-fit: contain; }
-              .pesantren-info h2 { margin: 0; color: #4c1d95; font-size: 20px; }
-              .pesantren-info p { margin: 2px 0; font-size: 13px; color: #666; }
-              .invoice-info { text-align: right; }
-              .invoice-info h1 { margin: 0; font-size: 24px; color: #8b5cf6; text-transform: uppercase; letter-spacing: 2px; }
-              .details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px; background: #f8fafc; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0; }
-              .detail-item { display: flex; flex-direction: column; }
-              .detail-label { font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase; }
-              .detail-value { font-size: 15px; font-weight: 600; color: #1e293b; }
-              table { width: 100%; line-height: inherit; text-align: left; border-collapse: collapse; margin-top: 10px; }
-              table th { background: #f1f5f9; padding: 12px; border-bottom: 2px solid #cbd5e1; color: #334155; }
-              table td { padding: 12px; border-bottom: 1px solid #e2e8f0; }
-              .total-row { background: #f8fafc; font-weight: bold; font-size: 16px; }
-              .total-row td { border-top: 2px solid #cbd5e1; border-bottom: none; }
-              .footer { margin-top: 40px; text-align: center; font-size: 12px; color: #666; border-top: 1px dashed #cbd5e1; padding-top: 20px; }
-              .status-badge { display: inline-block; padding: 6px 12px; border-radius: 4px; font-weight: bold; text-transform: uppercase; font-size: 13px; background: #f3e8ff; color: #6b21a8; border: 1px solid #e9d5ff; }
-              @media print {
-                  body { background: none; padding: 0; }
-                  .invoice-box { box-shadow: none; border: none; padding: 10px; }
-                  .no-print { display: none; }
-              }
-          </style>
-      </head>
-      <body>
-          <div class="no-print" style="text-align: center; margin-bottom: 20px;">
-              <button onclick="window.print()" style="padding: 10px 20px; background: #8b5cf6; color: #fff; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">Cetak Invoice / Simpan PDF</button>
-          </div>
-          <div class="invoice-box">
-              <div class="header">
-                  <div class="logo-container">
-                      ${req.pesantren?.logo ? `<img src="${req.pesantren.logo}" class="logo" alt="Logo" />` : ''}
-                      <div class="pesantren-info">
-                          <h2>${req.pesantren?.name || 'Pesantren'}</h2>
-                          <p>${req.pesantren?.address || ''}</p>
-                          <p>${req.pesantren?.phone ? 'Telp: ' + req.pesantren.phone : ''}</p>
-                      </div>
-                  </div>
-                  <div class="invoice-info">
-                      <h1>Invoice</h1>
-                      <div style="font-weight: 600; margin-top: 5px;">ID: ${req.id.slice(0, 8).toUpperCase()}</div>
-                      <div class="status-badge" style="margin-top: 8px;">DISETUJUI</div>
-                  </div>
-              </div>
-
-              <div class="details-grid">
-                  <div class="detail-item">
-                      <span class="detail-label">Tanggal Top Up</span>
-                      <span class="detail-value">${date} ${time}</span>
-                  </div>
-                  <div class="detail-item">
-                      <span class="detail-label">Jenis Transaksi</span>
-                      <span class="detail-value">Top Up Saldo Induk Pesantren</span>
-                  </div>
-              </div>
-
-              <table>
-                  <thead>
-                      <tr>
-                          <th>Deskripsi Transaksi</th>
-                          <th style="text-align: right;">Jumlah</th>
-                      </tr>
-                  </thead>
-                  <tbody>
-                      <tr>
-                          <td>
-                              <div style="font-weight: 600; color: #1e293b;">Penambahan Saldo Induk</div>
-                          </td>
-                          <td style="text-align: right; vertical-align: top; font-weight: 500;">Rp ${amount}</td>
-                      </tr>
-                      <tr class="total-row">
-                          <td style="text-align: right;">Total Top Up</td>
-                          <td style="text-align: right; color: #8b5cf6;">Rp ${amount}</td>
-                      </tr>
-                  </tbody>
-              </table>
-
-              <div class="footer">
-                  <p>Ini adalah bukti sah transaksi Top Up Saldo Induk Pesantren yang diterbitkan oleh sistem MUDAQ.</p>
-                  <p>&copy; ${new Date().getFullYear()} MUDAQ Management System</p>
-              </div>
-          </div>
-      </body>
-      </html>
-    `;
+    return { message: 'Request disetujui dan payout Xendit dibuat', request: updatedRequest };
   }
 
   async generateWithdrawInvoiceHtml(id: string): Promise<string> {
     const req = await this.prisma.tenantWithdrawalRequest.findUnique({ where: { id }, include: { pesantren: true } });
     if (!req) throw new NotFoundException('Request tidak ditemukan');
-    if (req.status !== 'approved') throw new BadRequestException('Hanya request yang disetujui yang memiliki bukti pencairan');
+    if (!['processing', 'succeeded'].includes(req.status)) {
+      throw new BadRequestException('Hanya request yang sudah diproses Xendit yang memiliki bukti pencairan');
+    }
 
     const amount = Number(req.amount).toLocaleString('id-ID');
     const date = new Date(req.updated_at).toLocaleDateString('id-ID', {
@@ -1050,7 +1109,7 @@ export class WalletService {
       <html lang="id">
       <head>
           <meta charset="UTF-8">
-          <title>Bukti Pencairan Dana - ${req.id}</title>
+          <title>Bukti Pencairan Dana Gateway - ${req.id}</title>
           <style>
               body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #333; line-height: 1.6; padding: 20px; background: #f9f9f9; }
               .invoice-box { max-width: 800px; margin: auto; padding: 30px; border: 1px solid #eee; background: #fff; box-shadow: 0 0 10px rgba(0, 0, 0, 0.15); border-radius: 8px; }
@@ -1096,7 +1155,7 @@ export class WalletService {
                   <div class="invoice-info">
                       <h1>Bukti Dana</h1>
                       <div style="font-weight: 600; margin-top: 5px;">ID: ${req.id.slice(0, 8).toUpperCase()}</div>
-                      <div class="status-badge" style="margin-top: 8px;">CAIR</div>
+                      <div class="status-badge" style="margin-top: 8px;">${req.status === 'succeeded' ? 'CAIR' : 'DIPROSES'}</div>
                   </div>
               </div>
 
@@ -1107,7 +1166,7 @@ export class WalletService {
                   </div>
                   <div class="detail-item">
                       <span class="detail-label">Jenis Transaksi</span>
-                      <span class="detail-value">Tarik Dana (Withdrawal)</span>
+                      <span class="detail-value">Tarik Dana Gateway Xendit</span>
                   </div>
                   <div class="detail-item">
                       <span class="detail-label">Bank Tujuan</span>
@@ -1129,7 +1188,7 @@ export class WalletService {
                   <tbody>
                       <tr>
                           <td>
-                              <div style="font-weight: 600; color: #1e293b;">Pencairan Saldo Induk ke Rekening Bank</div>
+                              <div style="font-weight: 600; color: #1e293b;">Pencairan Dana Gateway Xendit ke Rekening Bank</div>
                           </td>
                           <td style="text-align: right; vertical-align: top; font-weight: 500;">Rp ${amount}</td>
                       </tr>
@@ -1141,7 +1200,7 @@ export class WalletService {
               </table>
 
               <div class="footer">
-                  <p>Ini adalah bukti sah transaksi Pencairan Saldo Induk Pesantren yang diterbitkan oleh sistem MUDAQ.</p>
+                  <p>Ini adalah bukti transaksi Pencairan Dana Gateway Pesantren yang diterbitkan oleh sistem MUDAQ.</p>
                   <p>&copy; ${new Date().getFullYear()} MUDAQ Management System</p>
               </div>
           </div>
@@ -1168,5 +1227,74 @@ export class WalletService {
       },
       orderBy: { created_at: 'desc' },
     });
+  }
+
+  async getTenantTopupRequests(targetUuid?: string, status?: string) {
+    const where: any = {};
+    if (targetUuid) where.tenant_uuid = targetUuid;
+    if (status) where.status = status;
+
+    return this.prisma.tenantTopupRequest.findMany({
+      where,
+      include: {
+        pesantren: { select: { name: true, domain: true } },
+      },
+      orderBy: { created_at: 'desc' },
+    });
+  }
+
+  async approveTenantTopupRequest(requestId: string, isApproved: boolean) {
+    const request = await this.prisma.tenantTopupRequest.findUnique({
+      where: { id: requestId },
+    });
+    if (!request) throw new NotFoundException('Request tidak ditemukan');
+    if (request.status !== 'pending') throw new BadRequestException('Request sudah diproses');
+
+    if (!isApproved) {
+      await this.prisma.tenantTopupRequest.update({
+        where: { id: requestId },
+        data: { status: 'rejected' },
+      });
+      return { message: 'Request ditolak' };
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // 1. Approve Request
+      const approved = await tx.tenantTopupRequest.update({
+        where: { id: requestId },
+        data: { status: 'approved' },
+      });
+
+      // 2. Add Balance to Tenant Wallet
+      let wallet = await tx.tenantWallet.findUnique({ where: { tenant_uuid: request.tenant_uuid } });
+      if (!wallet) {
+        wallet = await tx.tenantWallet.create({ data: { tenant_uuid: request.tenant_uuid, balance: 0 } });
+      }
+
+      const balanceBefore = wallet.balance;
+      const balanceAfter = Prisma.Decimal.add(balanceBefore, request.amount);
+
+      await tx.tenantWallet.update({
+        where: { id: wallet.id },
+        data: { balance: balanceAfter },
+      });
+
+      // 3. Create Transaction Log
+      await tx.tenantWalletTransaction.create({
+        data: {
+          tenant_uuid: request.tenant_uuid,
+          type: 'tenant_operational_deposit',
+          amount: request.amount,
+          balance_before: balanceBefore,
+          balance_after: balanceAfter,
+          reference: `REQ-TOPUP-${requestId}`,
+          description: `Setoran kas/float disetujui (${request.notes || ''})`,
+        },
+      });
+
+      return approved;
+    });
+
+    return { message: 'Request disetujui dan saldo ditambahkan', request: updated };
   }
 }

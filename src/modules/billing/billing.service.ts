@@ -101,7 +101,13 @@ export class BillingService {
           surcharge_fee: true, 
           qris_platform_fee: true, 
           qris_surcharge_fee: true, 
-          qris_fee_is_percent: true 
+          qris_fee_is_percent: true,
+          xendit_fee_user: true,
+          platform_fee_user: true,
+          platform_fee_tenant: true,
+          qris_xendit_fee_user: true,
+          qris_platform_fee_user: true,
+          qris_platform_fee_tenant: true,
         },
       });
 
@@ -124,11 +130,23 @@ export class BillingService {
 
           const isQRIS = dto.payment_channel === 'QRIS';
           if (isQRIS && pesantren?.qris_fee_is_percent) {
-            surcharge = Math.round(totalAmount * (Number(pesantren.qris_surcharge_fee) / 100));
-            platformFeeAmount = Math.round((totalAmount + surcharge) * (Number(pesantren.qris_platform_fee) / 100));
+            const xenditFeeUser = Math.round(totalAmount * (Number(pesantren.qris_xendit_fee_user || 0) / 100));
+            const platformFeeUser = Math.round(totalAmount * (Number(pesantren.qris_platform_fee_user || 0) / 100));
+            const platformFeeTenant = Math.round(totalAmount * (Number(pesantren.qris_platform_fee_tenant || 0) / 100));
+            surcharge = xenditFeeUser + platformFeeUser;
+            platformFeeAmount = platformFeeUser + platformFeeTenant;
           } else {
-            surcharge = isQRIS ? Number(pesantren?.qris_surcharge_fee || 0) : Number(pesantren?.surcharge_fee || 0);
-            platformFeeAmount = isQRIS ? Number(pesantren?.qris_platform_fee || 0) : Number(pesantren?.platform_fee || 0);
+            const xenditFeeUser = isQRIS
+              ? Number(pesantren?.qris_xendit_fee_user || pesantren?.qris_surcharge_fee || 0)
+              : Number(pesantren?.xendit_fee_user || pesantren?.surcharge_fee || 0);
+            const platformFeeUser = isQRIS
+              ? Number(pesantren?.qris_platform_fee_user || 0)
+              : Number(pesantren?.platform_fee_user || 0);
+            const platformFeeTenant = isQRIS
+              ? Number(pesantren?.qris_platform_fee_tenant || pesantren?.qris_platform_fee || 0)
+              : Number(pesantren?.platform_fee_tenant || pesantren?.platform_fee || 0);
+            surcharge = xenditFeeUser + platformFeeUser;
+            platformFeeAmount = platformFeeUser + platformFeeTenant;
           }
 
           const finalTotal = totalAmount + surcharge;
@@ -516,7 +534,20 @@ export class BillingService {
       const externalId = `PAY-${bill.id}-${uuidv4().slice(0, 8)}`;
       const pesantren = await this.prisma.pesantren.findUnique({
         where: { id: tenantUuid },
-        select: { xendit_sub_account_id: true, platform_fee: true, surcharge_fee: true, qris_platform_fee: true, qris_surcharge_fee: true, qris_fee_is_percent: true },
+        select: {
+          xendit_sub_account_id: true,
+          platform_fee: true,
+          surcharge_fee: true,
+          qris_platform_fee: true,
+          qris_surcharge_fee: true,
+          qris_fee_is_percent: true,
+          xendit_fee_user: true,
+          platform_fee_user: true,
+          platform_fee_tenant: true,
+          qris_xendit_fee_user: true,
+          qris_platform_fee_user: true,
+          qris_platform_fee_tenant: true,
+        },
       });
       const student = await this.prisma.student.findUnique({
         where: { id: bill.student_id },
@@ -548,21 +579,24 @@ export class BillingService {
           const isQRIS = dto.payment_channel === 'QRIS';
 
           if (isQRIS && pesantren?.qris_fee_is_percent) {
-            const surchargePercent = Number(pesantren.qris_surcharge_fee || 0);
-            const platformPercent = Number(pesantren.qris_platform_fee || 0);
-            
-            surcharge = Math.round(Number(dto.amount) * (surchargePercent / 100));
-            const totalWithSurcharge = Number(dto.amount) + surcharge;
-            
-            const rawPlatformFeeAmount = Math.round(totalWithSurcharge * (platformPercent / 100));
-            const estimatedXenditFee = Math.round(totalWithSurcharge * 0.007 * 1.11);
-            platformFeeAmount = Math.max(0, rawPlatformFeeAmount - estimatedXenditFee);
+            const baseAmount = Number(dto.amount);
+            const xenditFeeUser = Math.round(baseAmount * (Number(pesantren.qris_xendit_fee_user || 0) / 100));
+            const platformFeeUser = Math.round(baseAmount * (Number(pesantren.qris_platform_fee_user || 0) / 100));
+            const platformFeeTenant = Math.round(baseAmount * (Number(pesantren.qris_platform_fee_tenant || 0) / 100));
+            surcharge = xenditFeeUser + platformFeeUser;
+            platformFeeAmount = platformFeeUser + platformFeeTenant;
           } else {
-            surcharge = isQRIS ? Number(pesantren?.qris_surcharge_fee || 0) : Number(pesantren?.surcharge_fee || 0);
-            const rawPlatformFeeAmount = isQRIS ? Number(pesantren?.qris_platform_fee || 0) : Number(pesantren?.platform_fee || 0);
-            
-            const estimatedXenditFee = isQRIS ? Math.round((Number(dto.amount) + surcharge) * 0.007 * 1.11) : Math.round(4500 * 1.11);
-            platformFeeAmount = Math.max(0, rawPlatformFeeAmount - estimatedXenditFee);
+            const xenditFeeUser = isQRIS
+              ? Number(pesantren?.qris_xendit_fee_user || pesantren?.qris_surcharge_fee || 0)
+              : Number(pesantren?.xendit_fee_user || pesantren?.surcharge_fee || 0);
+            const platformFeeUser = isQRIS
+              ? Number(pesantren?.qris_platform_fee_user || 0)
+              : Number(pesantren?.platform_fee_user || 0);
+            const platformFeeTenant = isQRIS
+              ? Number(pesantren?.qris_platform_fee_tenant || pesantren?.qris_platform_fee || 0)
+              : Number(pesantren?.platform_fee_tenant || pesantren?.platform_fee || 0);
+            surcharge = xenditFeeUser + platformFeeUser;
+            platformFeeAmount = platformFeeUser + platformFeeTenant;
           }
           
           const totalAmount = Number(dto.amount) + surcharge;
@@ -753,7 +787,20 @@ export class BillingService {
       const externalId = `DON-${dto.student_id}-${category.id}-${uuidv4().slice(0, 8)}`;
       const pesantren = await this.prisma.pesantren.findUnique({
         where: { id: tenantUuid },
-        select: { xendit_sub_account_id: true, platform_fee: true, surcharge_fee: true, qris_platform_fee: true, qris_surcharge_fee: true, qris_fee_is_percent: true },
+        select: {
+          xendit_sub_account_id: true,
+          platform_fee: true,
+          surcharge_fee: true,
+          qris_platform_fee: true,
+          qris_surcharge_fee: true,
+          qris_fee_is_percent: true,
+          xendit_fee_user: true,
+          platform_fee_user: true,
+          platform_fee_tenant: true,
+          qris_xendit_fee_user: true,
+          qris_platform_fee_user: true,
+          qris_platform_fee_tenant: true,
+        },
       });
       const student = await this.prisma.student.findFirst({
         where: { id: dto.student_id, tenant_uuid: tenantUuid },
@@ -787,21 +834,24 @@ export class BillingService {
           const isQRIS = dto.payment_channel === 'QRIS';
 
           if (isQRIS && pesantren?.qris_fee_is_percent) {
-            const surchargePercent = Number(pesantren.qris_surcharge_fee || 0);
-            const platformPercent = Number(pesantren.qris_platform_fee || 0);
-            
-            surcharge = Math.round(Number(dto.amount) * (surchargePercent / 100));
-            const totalWithSurcharge = Number(dto.amount) + surcharge;
-            
-            const rawPlatformFeeAmount = Math.round(totalWithSurcharge * (platformPercent / 100));
-            const estimatedXenditFee = Math.round(totalWithSurcharge * 0.007 * 1.11);
-            platformFeeAmount = Math.max(0, rawPlatformFeeAmount - estimatedXenditFee);
+            const baseAmount = Number(dto.amount);
+            const xenditFeeUser = Math.round(baseAmount * (Number(pesantren.qris_xendit_fee_user || 0) / 100));
+            const platformFeeUser = Math.round(baseAmount * (Number(pesantren.qris_platform_fee_user || 0) / 100));
+            const platformFeeTenant = Math.round(baseAmount * (Number(pesantren.qris_platform_fee_tenant || 0) / 100));
+            surcharge = xenditFeeUser + platformFeeUser;
+            platformFeeAmount = platformFeeUser + platformFeeTenant;
           } else {
-            surcharge = isQRIS ? Number(pesantren?.qris_surcharge_fee || 0) : Number(pesantren?.surcharge_fee || 0);
-            const rawPlatformFeeAmount = isQRIS ? Number(pesantren?.qris_platform_fee || 0) : Number(pesantren?.platform_fee || 0);
-            
-            const estimatedXenditFee = isQRIS ? Math.round((Number(dto.amount) + surcharge) * 0.007 * 1.11) : Math.round(4500 * 1.11);
-            platformFeeAmount = Math.max(0, rawPlatformFeeAmount - estimatedXenditFee);
+            const xenditFeeUser = isQRIS
+              ? Number(pesantren?.qris_xendit_fee_user || pesantren?.qris_surcharge_fee || 0)
+              : Number(pesantren?.xendit_fee_user || pesantren?.surcharge_fee || 0);
+            const platformFeeUser = isQRIS
+              ? Number(pesantren?.qris_platform_fee_user || 0)
+              : Number(pesantren?.platform_fee_user || 0);
+            const platformFeeTenant = isQRIS
+              ? Number(pesantren?.qris_platform_fee_tenant || pesantren?.qris_platform_fee || 0)
+              : Number(pesantren?.platform_fee_tenant || pesantren?.platform_fee || 0);
+            surcharge = xenditFeeUser + platformFeeUser;
+            platformFeeAmount = platformFeeUser + platformFeeTenant;
           }
           
           const totalAmount = Number(dto.amount) + surcharge;
@@ -1070,7 +1120,7 @@ export class BillingService {
     return await this.prisma.$transaction(async (tx) => {
       // PIN validation if paying with wallet balance
       if (dto.payment_method === 'saldo_santri') {
-        const wallet = await tx.wallet.findUnique({ where: { student_id: dto.student_id } });
+        const wallet = await tx.wallet.findFirst({ where: { student_id: dto.student_id, tenant_uuid: tenantUuid, student: { deleted_at: null } } });
         if (!wallet || Number(wallet.balance) < totalAmount) {
           throw new BadRequestException('Saldo santri tidak mencukupi');
         }

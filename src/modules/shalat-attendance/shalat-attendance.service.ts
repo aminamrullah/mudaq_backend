@@ -224,6 +224,7 @@ export class ShalatAttendanceService {
       orderBy: {
         date: 'desc',
       },
+      take: 20,
     });
   }
 

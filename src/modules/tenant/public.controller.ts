@@ -39,9 +39,9 @@ export class PublicController {
         phone: true,
         logo: true,
         letterhead: true,
-        landing_page_template: true,
-        landing_page_config: true,
         ppdb_is_active: true,
+        addon_ppdb: true,
+        max_students: true,
         education_units: {
           where: { is_active: true },
           select: {
@@ -55,6 +55,11 @@ export class PublicController {
     });
 
     if (!pesantren) throw new NotFoundException('Pesantren tidak ditemukan');
+
+    // ── PPDB Addon Check ──
+    if (!pesantren.addon_ppdb) {
+      throw new NotFoundException('PPDB tidak aktif untuk pesantren ini');
+    }
 
     // Get active waves for this pesantren
     const now = new Date();
@@ -78,54 +83,6 @@ export class PublicController {
     };
   }
 
-  @Throttle({ default: { limit: 10, ttl: 60000 } }) // Lindungi dari DDoS (10 req/min)
-  @Get('landing/:domain')
-  @ApiOperation({ summary: 'Get landing page data by domain' })
-  async getLandingPageByDomain(@Param('domain') domain: string) {
-    // If domain is 'mudaq.id' or similar, we might want to return something else or handle it
-    const pesantren = await this.prisma.pesantren.findUnique({
-      where: { domain },
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        domain: true,
-        address: true,
-        phone: true,
-        logo: true,
-        letterhead: true,
-        description: true,
-        landing_page_template: true,
-        landing_page_config: true,
-        addon_landing_page: true,
-        posts: {
-          where: { is_published: true },
-          orderBy: { created_at: 'desc' },
-          take: 6,
-        },
-      } as any,
-    });
-
-    if (!pesantren || !(pesantren as any).addon_landing_page) throw new NotFoundException('Landing page tidak ditemukan');
-    return pesantren;
-  }
-
-  @Throttle({ default: { limit: 20, ttl: 60000 } })
-  @Get('landing/:domain/posts/:postId')
-  @ApiOperation({ summary: 'Get single blog post for public website' })
-  async getPublicPost(@Param('domain') domain: string, @Param('postId') postId: string) {
-    const post = await this.prisma.post.findFirst({
-      where: { 
-        id: postId,
-        is_published: true,
-        pesantren: { domain: domain } // Strict tenant isolation
-      }
-    });
-
-    if (!post) throw new NotFoundException('Artikel tidak ditemukan');
-    return post;
-  }
-
   @Throttle({ default: { limit: 3, ttl: 60000 } }) // Maksimal 3 pendaftaran per menit dari IP yang sama
   @Post('pesantren/:slug/register')
   @ApiOperation({ summary: 'Register new student to a pesantren by slug (PPDB)' })
@@ -140,23 +97,47 @@ export class PublicController {
 
     const pesantren = await this.prisma.pesantren.findUnique({
       where: { slug },
-      select: { id: true, max_students: true, ppdb_is_active: true },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        domain: true,
+        address: true,
+        phone: true,
+        logo: true,
+        letterhead: true,
+        ppdb_is_active: true,
+        addon_ppdb: true,
+        max_students: true,
+        education_units: {
+          where: { is_active: true },
+          select: {
+            id: true,
+            name: true,
+            ppdb_is_active: true
+          },
+          orderBy: { name: 'asc' }
+        }
+      },
     });
 
     if (!pesantren) throw new NotFoundException('Pesantren tidak ditemukan');
 
+    // ── PPDB Addon Check ──
+    if (!pesantren.addon_ppdb) {
+      throw new NotFoundException('PPDB tidak aktif untuk pesantren ini');
+    }
+
     // ── PPDB Status Check ──
-    if (!pesantren.ppdb_is_active && !dto.unit_id) {
+    if (!pesantren.ppdb_is_active) {
       throw new BadRequestException('Pendaftaran santri baru (PPDB) Yayasan saat ini sedang ditutup.');
     }
     
-    // Check if unit is provided and active
     if (dto.unit_id) {
       const unit = await this.prisma.educationUnit.findFirst({
         where: { id: dto.unit_id, tenant_uuid: pesantren.id }
       });
       if (!unit) throw new BadRequestException('Unit pendidikan tidak valid.');
-      if (!unit.ppdb_is_active) throw new BadRequestException(`Pendaftaran santri baru untuk unit ${unit.name} sedang ditutup.`);
     }
 
     // ── PPDB Wave Check ──
@@ -167,7 +148,9 @@ export class PublicController {
         is_active: true,
         start_date: { lte: now },
         end_date: { gte: now },
-        ...(dto.unit_id ? { unit_id: dto.unit_id } : { unit_id: null })
+        ...(dto.unit_id
+          ? { unit_ids: { has: dto.unit_id } }
+          : { unit_ids: { isEmpty: true } })
       },
       include: {
         _count: {
@@ -288,7 +271,7 @@ export class PublicController {
 
     const pesantren = await this.prisma.pesantren.findUnique({
       where: { slug },
-      select: { id: true, ppdb_is_active: true, storage_used: true, storage_limit: true },
+      select: { id: true, ppdb_is_active: true, storage_used: true, storage_limit: true, addon_ppdb: true },
     });
 
     if (!pesantren) {
@@ -296,10 +279,14 @@ export class PublicController {
       throw new NotFoundException('Pesantren tidak ditemukan');
     }
 
+    if (!pesantren.addon_ppdb) {
+      fs.unlinkSync(file.path);
+      throw new NotFoundException('PPDB tidak aktif untuk pesantren ini');
+    }
+
     if (!pesantren.ppdb_is_active) {
-      // Allow upload if there is unit_id logic? 
-      // Actually, we don't have unit_id here, but that's fine. We'll just allow it if any is active or skip check.
-      // Wait, we can check if AT LEAST ONE unit is active, or pesantren is active.
+      fs.unlinkSync(file.path);
+      throw new BadRequestException('Pendaftaran sedang ditutup, tidak dapat mengunggah file.');
     }
 
     if (Number(pesantren.storage_used) + file.size > Number(pesantren.storage_limit)) {

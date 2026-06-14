@@ -64,4 +64,29 @@ export class TeacherCheckInDto {
   @IsOptional()
   @IsString()
   image_base64?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  latitude?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  longitude?: number;
+}
+
+export class TeacherLeaveDto {
+  @ApiProperty()
+  @IsUUID()
+  @IsNotEmpty()
+  schedule_id: string;
+
+  @ApiProperty()
+  @IsDateString()
+  @IsNotEmpty()
+  date: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  notes?: string;
 }

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ClsService } from 'nestjs-cls';
 import { CreateTahfidzRecordDto, UpdateTahfidzRecordDto } from './dto/tahfidz.dto';
@@ -23,15 +23,16 @@ export class TahfidzService {
       });
 
       if (teacher) {
+        const studentFilter: any = where.student || {};
         if (category === 'QURAN') {
           if (!teacher.can_manage_quran) return []; // Not authorized for Quran
-          where.student = { quran_teacher_id: teacher.id };
+          where.student = { ...studentFilter, quran_teacher_id: teacher.id };
         } else if (category === 'KITAB' || category === 'NADHOM') {
           if (!teacher.can_manage_kitab) return []; // Not authorized for Kitab
-          where.student = { kitab_teacher_id: teacher.id };
+          where.student = { ...studentFilter, kitab_teacher_id: teacher.id };
         } else {
           // General query by ustad, show students they guide in either
-          where.student = {
+          where.student = { ...studentFilter,
             OR: [
               { quran_teacher_id: teacher.id },
               { kitab_teacher_id: teacher.id },
@@ -66,14 +67,14 @@ export class TahfidzService {
         where: { user_id: userId },
       });
 
-      if (!teacher) throw new Error('Teacher profile not found');
+      if (!teacher) throw new NotFoundException('Profil guru tidak ditemukan');
 
       // Check category permission
       if (dto.category === 'QURAN' && !teacher.can_manage_quran) {
-        throw new Error('Anda tidak memiliki izin untuk mengelola hafalan Quran');
+        throw new ForbiddenException('Anda tidak memiliki izin untuk mengelola hafalan Quran');
       }
       if ((dto.category === 'KITAB' || dto.category === 'NADHOM') && !teacher.can_manage_kitab) {
-        throw new Error('Anda tidak memiliki izin untuk mengelola hafalan Kitab');
+        throw new ForbiddenException('Anda tidak memiliki izin untuk mengelola hafalan Kitab');
       }
 
       // Check student assignment
@@ -81,13 +82,13 @@ export class TahfidzService {
         where: { id: dto.student_id },
       });
 
-      if (!student) throw new Error('Santri tidak ditemukan');
+      if (!student) throw new NotFoundException('Santri tidak ditemukan');
 
       if (dto.category === 'QURAN' && student.quran_teacher_id !== teacher.id) {
-        throw new Error('Santri ini bukan bimbingan Quran Anda');
+        throw new BadRequestException('Santri ini bukan bimbingan Quran Anda');
       }
       if ((dto.category === 'KITAB' || dto.category === 'NADHOM') && student.kitab_teacher_id !== teacher.id) {
-        throw new Error('Santri ini bukan bimbingan Kitab Anda');
+        throw new BadRequestException('Santri ini bukan bimbingan Kitab Anda');
       }
     }
 
@@ -116,7 +117,7 @@ export class TahfidzService {
     });
 
     if (!record || record.tenant_uuid !== tenantId) {
-      throw new Error('Data tidak ditemukan atau Anda tidak memiliki akses');
+      throw new NotFoundException('Data tidak ditemukan atau Anda tidak memiliki akses');
     }
 
     if (role === 'USTAD' && userId) {
@@ -124,15 +125,15 @@ export class TahfidzService {
         where: { user_id: userId },
       });
 
-      if (!teacher) throw new Error('Profil guru tidak ditemukan');
+      if (!teacher) throw new NotFoundException('Profil guru tidak ditemukan');
 
       if (record.category === 'QURAN') {
         if (!teacher.can_manage_quran || record.student.quran_teacher_id !== teacher.id) {
-          throw new Error('Anda tidak memiliki akses untuk mengubah record ini');
+          throw new ForbiddenException('Anda tidak memiliki akses untuk mengubah record ini');
         }
       } else {
         if (!teacher.can_manage_kitab || record.student.kitab_teacher_id !== teacher.id) {
-          throw new Error('Anda tidak memiliki akses untuk mengubah record ini');
+          throw new ForbiddenException('Anda tidak memiliki akses untuk mengubah record ini');
         }
       }
     }
@@ -153,7 +154,7 @@ export class TahfidzService {
     });
 
     if (!record || record.tenant_uuid !== tenantId) {
-      throw new Error('Data tidak ditemukan atau Anda tidak memiliki akses');
+      throw new NotFoundException('Data tidak ditemukan atau Anda tidak memiliki akses');
     }
 
     if (role === 'USTAD' && userId) {
@@ -161,15 +162,15 @@ export class TahfidzService {
         where: { user_id: userId },
       });
 
-      if (!teacher) throw new Error('Profil guru tidak ditemukan');
+      if (!teacher) throw new NotFoundException('Profil guru tidak ditemukan');
 
       if (record.category === 'QURAN') {
         if (!teacher.can_manage_quran || record.student.quran_teacher_id !== teacher.id) {
-          throw new Error('Anda tidak memiliki akses untuk menghapus record ini');
+          throw new ForbiddenException('Anda tidak memiliki akses untuk menghapus record ini');
         }
       } else {
         if (!teacher.can_manage_kitab || record.student.kitab_teacher_id !== teacher.id) {
-          throw new Error('Anda tidak memiliki akses untuk menghapus record ini');
+          throw new ForbiddenException('Anda tidak memiliki akses untuk menghapus record ini');
         }
       }
     }

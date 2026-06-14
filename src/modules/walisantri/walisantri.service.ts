@@ -211,12 +211,97 @@ export class WalisantriService {
             slug: true,
             logo: true,
             calendar_type: true,
+            phone: true,
           },
         },
       },
     });
 
     if (!user) throw new NotFoundException('User tidak ditemukan');
+
+    let summary = {
+      active_children: 0,
+      highest_achievement: 'Belum ada',
+      bill_status: 'Lunas'
+    };
+
+    let settings = {
+      admin_wa: user.pesantren?.phone || '',
+      facebook_url: '',
+      instagram_url: '',
+      twitter_url: ''
+    };
+
+    if (user.tenant_uuid) {
+      // 1. Get settings
+      const tenantSettings = await this.prisma.setting.findMany({
+        where: { tenant_uuid: user.tenant_uuid }
+      });
+      for (const s of tenantSettings) {
+        if (s.key === 'admin_wa' && s.value) settings.admin_wa = s.value;
+        if (s.key === 'facebook_url' && s.value) settings.facebook_url = s.value;
+        if (s.key === 'instagram_url' && s.value) settings.instagram_url = s.value;
+        if (s.key === 'twitter_url' && s.value) settings.twitter_url = s.value;
+      }
+
+      // 2. Get students summary
+      if (user.phone) {
+        const cleanPhone = user.phone.replace(/[^0-9]/g, '');
+        const normalizedPhone = normalizePhone(cleanPhone);
+        const legacyPhone = normalizedPhone.startsWith('628') ? '0' + normalizedPhone.slice(2) : cleanPhone;
+        const phoneVariants = [normalizedPhone, legacyPhone, cleanPhone, user.phone].filter(v => v && v.length >= 5);
+
+        const activeStudents = await this.prisma.student.findMany({
+          where: {
+            tenant_uuid: user.tenant_uuid,
+            parent_phone: { in: phoneVariants },
+            status: { in: ['AKTIF', 'active'] },
+            deleted_at: null
+          },
+          select: { id: true }
+        });
+
+        summary.active_children = activeStudents.length;
+
+        if (activeStudents.length > 0) {
+          const studentIds = activeStudents.map(s => s.id);
+
+          // Get highest juz or latest title
+          const tahfidz = await this.prisma.tahfidzRecord.findFirst({
+            where: { student_id: { in: studentIds } },
+            orderBy: [
+              { juz: 'desc' },
+              { date: 'desc' }
+            ]
+          });
+          
+          if (tahfidz) {
+            if (tahfidz.juz) summary.highest_achievement = `Juz ${tahfidz.juz}`;
+            else summary.highest_achievement = tahfidz.title;
+          }
+
+          // Check any unpaid bills for current month
+          const now = new Date();
+          const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+          const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+          
+          const unpaidBill = await this.prisma.bill.findFirst({
+            where: {
+              student_id: { in: studentIds },
+              status: { not: 'paid' },
+              due_date: {
+                gte: startOfMonth,
+                lte: endOfMonth
+              }
+            }
+          });
+
+          if (unpaidBill) {
+            summary.bill_status = 'Belum Lunas';
+          }
+        }
+      }
+    }
 
     return {
       id: user.id,
@@ -229,6 +314,8 @@ export class WalisantriService {
       pesantren_slug: user.pesantren?.slug,
       pesantren_logo: user.pesantren?.logo,
       calendar_type: user.pesantren?.calendar_type || 'gregorian',
+      summary,
+      settings
     };
   }
 
@@ -270,17 +357,38 @@ export class WalisantriService {
   }
 
   // ── Attendance ──
-  async getAttendance(tenantUuid: string, phone: string, studentId: string, month?: string) {
+  async getAttendance(tenantUuid: string, phone: string, studentId: string, month?: string, exactDate?: string, sort: 'asc' | 'desc' = 'desc') {
     const student = await this.verifyOwnership(tenantUuid, phone, studentId);
     const linkedIds = await this.getLinkedStudentIds(student);
     
     const where: any = { tenant_uuid: student.tenant_uuid, student_id: { in: linkedIds } };
-    if (month) {
+    if (exactDate) {
+      const start = new Date(`${exactDate}T00:00:00.000Z`);
+      const end = new Date(`${exactDate}T23:59:59.999Z`);
+      where.date = { gte: start, lte: end };
+    } else if (month) {
       const start = new Date(`${month}-01`);
       const end = new Date(start);
       end.setMonth(end.getMonth() + 1);
       where.date = { gte: start, lt: end };
     }
+
+    // Build summary using groupBy
+    const summaryGroups = await this.prisma.attendance.groupBy({
+      by: ['status'],
+      where,
+      _count: { status: true },
+    });
+
+    const summary = { hadir: 0, izin: 0, sakit: 0, alpha: 0, total: 0 };
+    summaryGroups.forEach((g) => {
+      if (g.status === 'hadir') summary.hadir = g._count.status;
+      else if (g.status === 'izin') summary.izin = g._count.status;
+      else if (g.status === 'sakit') summary.sakit = g._count.status;
+      else summary.alpha += g._count.status;
+      summary.total += g._count.status;
+    });
+
     const records = await this.prisma.attendance.findMany({
       where,
       include: {
@@ -288,43 +396,49 @@ export class WalisantriService {
           include: { classroom: { include: { unit: { select: { name: true } } } } }
         }
       },
-      orderBy: { date: 'desc' },
-      take: 100,
-    });
-
-    // Build summary
-    const summary = { hadir: 0, izin: 0, sakit: 0, alpha: 0, total: records.length };
-    records.forEach((r) => {
-      if (r.status === 'hadir') summary.hadir++;
-      else if (r.status === 'izin') summary.izin++;
-      else if (r.status === 'sakit') summary.sakit++;
-      else summary.alpha++;
+      orderBy: { date: sort },
+      take: 20,
     });
 
     return { records, summary };
   }
 
   // ── Shalat Attendance ──
-  async getShalatAttendance(tenantUuid: string, phone: string, studentId: string, month?: string) {
+  async getShalatAttendance(tenantUuid: string, phone: string, studentId: string, month?: string, exactDate?: string, sort: 'asc' | 'desc' = 'desc') {
     const student = await this.verifyOwnership(tenantUuid, phone, studentId);
     const linkedIds = await this.getLinkedStudentIds(student);
 
     const where: any = { tenant_uuid: student.tenant_uuid, student_id: { in: linkedIds } };
-    if (month) {
+    if (exactDate) {
+      const start = new Date(`${exactDate}T00:00:00.000Z`);
+      const end = new Date(`${exactDate}T23:59:59.999Z`);
+      where.date = { gte: start, lte: end };
+    } else if (month) {
       const start = new Date(`${month}-01`);
       const end = new Date(start);
       end.setMonth(end.getMonth() + 1);
       where.date = { gte: start, lt: end };
     }
-    const records = await this.prisma.shalatAttendance.findMany({
+
+    // Build summary using groupBy
+    const summaryGroups = await this.prisma.shalatAttendance.groupBy({
+      by: ['status'],
       where,
-      orderBy: { date: 'desc' },
-      take: 200,
+      _count: { status: true },
     });
 
-    const summary: Record<string, number> = { jamaah: 0, munfarid: 0, izin: 0, sakit: 0, alpha: 0, haid: 0, total: records.length };
-    records.forEach((r) => {
-      if (summary[r.status] !== undefined) summary[r.status]++;
+    const summary: Record<string, number> = { jamaah: 0, munfarid: 0, izin: 0, sakit: 0, alpha: 0, haid: 0, total: 0 };
+    summaryGroups.forEach((g) => {
+      if (summary[g.status] !== undefined) {
+        summary[g.status] = g._count.status;
+      }
+      summary.total += g._count.status;
+    });
+
+    const records = await this.prisma.shalatAttendance.findMany({
+      where,
+      orderBy: { date: sort },
+      take: 20,
     });
 
     return { records, summary };
@@ -341,7 +455,7 @@ export class WalisantriService {
     const records = await this.prisma.tahfidzRecord.findMany({
       where,
       orderBy: { date: 'desc' },
-      take: 100,
+      take: 20,
     });
 
     // Stats
@@ -370,7 +484,7 @@ export class WalisantriService {
     return this.prisma.healthRecord.findMany({
       where: { tenant_uuid: student.tenant_uuid, student_id: { in: linkedIds } },
       orderBy: { date: 'desc' },
-      take: 50,
+      take: 20,
     });
   }
 
@@ -381,6 +495,7 @@ export class WalisantriService {
     const records = await this.prisma.violation.findMany({
       where: { tenant_uuid: student.tenant_uuid, student_id: { in: linkedIds } },
       orderBy: { date: 'desc' },
+      take: 20,
     });
     const totalPoints = records.reduce((sum, v) => sum + v.points, 0);
     return { records, totalPoints, maxPoints: 100 };
@@ -393,6 +508,7 @@ export class WalisantriService {
     return this.prisma.studentPermission.findMany({
       where: { tenant_uuid: student.tenant_uuid, student_id: { in: linkedIds } },
       orderBy: { created_at: 'desc' },
+      take: 20,
     });
   }
 
@@ -484,6 +600,7 @@ Mohon segera periksa dashboard untuk memberikan persetujuan.`;
         unit: { select: { name: true } },
       },
       orderBy: { payment_date: 'desc' },
+      take: 20,
     });
   }
 

@@ -20,6 +20,7 @@ import { join } from 'path';
 import { AcademicModule } from './modules/academic/academic.module';
 import { TahfidzModule } from './modules/tahfidz/tahfidz.module';
 import { TeacherAttendanceModule } from './modules/teacher-attendance/teacher-attendance.module';
+import { AnnouncementModule } from './modules/announcement/announcement.module';
 import { TeachingJournalModule } from './modules/teaching-journal/teaching-journal.module';
 import { WalisantriModule } from './modules/walisantri/walisantri.module';
 import { PostModule } from './modules/post/post.module';
@@ -35,6 +36,8 @@ import { InventoryModule } from './modules/inventory/inventory.module';
 import { ShalatAttendanceModule } from './modules/shalat-attendance/shalat-attendance.module';
 import { EducationUnitModule } from './modules/education-unit/education-unit.module';
 import { UserWalletModule } from './modules/user-wallet/user-wallet.module';
+import { IncomeModule } from './modules/income/income.module';
+import { EmployeeModule } from './modules/employee/employee.module';
 
 @Module({
   imports: [
@@ -58,6 +61,7 @@ import { UserWalletModule } from './modules/user-wallet/user-wallet.module';
     TeacherModule,
     AttendanceModule,
     BillingModule,
+    AnnouncementModule,
     WalletModule,
     PayrollModule,
     DormitoryModule,
@@ -83,6 +87,8 @@ import { UserWalletModule } from './modules/user-wallet/user-wallet.module';
     ShalatAttendanceModule,
     EducationUnitModule,
     UserWalletModule,
+    IncomeModule,
+    EmployeeModule,
   ],
   providers: [
     {

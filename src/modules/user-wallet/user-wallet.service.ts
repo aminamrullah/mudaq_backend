@@ -101,27 +101,15 @@ export class UserWalletService {
         });
       }
 
-      // We allow tenant balance to be used for Ustad topup or they just hand cash to bendahara
-      // If it's manual topup (cash), bendahara receives cash and adds it to UserWallet
-      // Actually, if bendahara receives cash, tenant wallet balance should INCREASE because they hold the cash now?
-      // Yes, if Ustad gives cash to bendahara to topup, tenant holds more liabilities (Wallet) and more Cash.
-      // We will INCREASE tenantWallet balance when Ustad topups manual!
-      
-      const tenantBalanceBefore = tenantWallet.balance;
-      const tenantBalanceAfter = Prisma.Decimal.add(tenantBalanceBefore, amount);
-      await tx.tenantWallet.update({
-        where: { id: tenantWallet.id },
-        data: { balance: tenantBalanceAfter },
-      });
-
-      // Record Tenant Wallet Transaction
+      // Cash top-up is money received by the tenant cashier. It is booked as
+      // cash movement and must not inflate tenant float.
       await tx.tenantWalletTransaction.create({
         data: {
           tenant_uuid: tenantUuid,
-          type: 'deposit',
+          type: 'user_cash_topup',
           amount: amount,
-          balance_before: tenantBalanceBefore,
-          balance_after: tenantBalanceAfter,
+          balance_before: tenantWallet.balance,
+          balance_after: tenantWallet.balance,
           reference: `UTP-${Date.now()}`,
           description: `Setoran tunai top up dompet Ustad/Pegawai (Wallet ID: ${wallet.id})`,
         },
@@ -177,14 +165,6 @@ export class UserWalletService {
         });
       }
 
-      // Check tenant wallet balance to see if bendahara has enough to disburse
-      const pesantren = await tx.pesantren.findUnique({ where: { id: tenantUuid } });
-      const minBalance = Number(pesantren?.min_tenant_wallet_balance || 0);
-
-      if (Number(tenantWallet.balance) - Number(amount) < minBalance) {
-        throw new BadRequestException('Saldo Kas Bendahara (Induk) tidak mencukupi untuk penarikan ini.');
-      }
-
       const balanceBefore = wallet.balance;
       const balanceAfter = Prisma.Decimal.sub(balanceBefore, amount);
 
@@ -208,22 +188,15 @@ export class UserWalletService {
         },
       });
 
-      // 4. Deduct Tenant Wallet
-      const tenantBalanceBefore = tenantWallet.balance;
-      const tenantBalanceAfter = Prisma.Decimal.sub(tenantBalanceBefore, amount);
-      await tx.tenantWallet.update({
-        where: { id: tenantWallet.id },
-        data: { balance: tenantBalanceAfter },
-      });
-
-      // 5. Record Tenant Wallet Transaction
+      // Cash withdrawal is paid by tenant cashier. It is booked as cash out and
+      // must not reduce tenant float.
       await tx.tenantWalletTransaction.create({
         data: {
           tenant_uuid: tenantUuid,
-          type: 'withdraw',
+          type: 'user_cash_withdrawal',
           amount: amount,
-          balance_before: tenantBalanceBefore,
-          balance_after: tenantBalanceAfter,
+          balance_before: tenantWallet.balance,
+          balance_after: tenantWallet.balance,
           reference: `UWD-${Date.now()}`,
           description: `Penarikan tunai dompet Ustad/Pegawai (Wallet ID: ${wallet.id})`,
         },

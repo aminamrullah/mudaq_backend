@@ -131,21 +131,15 @@ export class TenantController {
   async updateSettings(@Request() req: any, @Body() dto: UpdateTenantDto) {
     const tenant = await this.tenantService.findOne(req.user.tenant_uuid);
     
-    // Check if landing page management is allowed for this pesantren
-    if (!(tenant as any).addon_landing_page || !tenant.can_manage_landing_page) {
-      // If not allowed, they shouldn't be able to update landing page related fields
-      const lpFields = ['landing_page_template', 'landing_page_config'];
-      const tryingToUpdateLP = Object.keys(dto).some(key => lpFields.includes(key));
-      
-      if (tryingToUpdateLP) {
-        throw new ForbiddenException(
-          'Anda tidak memiliki izin untuk mengelola landing page. Silakan hubungi Super Admin.',
-        );
-      }
+    // Check if PPDB is allowed for this pesantren - users can only toggle ppdb_is_active if addon_ppdb is true
+    if (!(tenant as any).addon_ppdb && 'ppdb_is_active' in dto) {
+      throw new ForbiddenException(
+        'Anda tidak memiliki izin untuk mengelola PPDB. Fitur ini adalah addon yang harus diaktifkan oleh Super Admin.',
+      );
     }
 
     // Critical fields that ONLY Superadmin can change
-    const restrictedFields = ['can_manage_landing_page', 'domain', 'slug', 'is_active', 'subscription_status'];
+    const restrictedFields = ['can_manage_landing_page', 'domain', 'slug', 'is_active', 'subscription_status', 'addon_ppdb', 'addon_koperasi', 'addon_wa_gateway', 'addon_inventaris', 'addon_rfid', 'addon_donasi', 'addon_payroll'];
     restrictedFields.forEach(field => {
       if (field in dto) {
         delete (dto as any)[field];
@@ -165,8 +159,8 @@ export class TenantController {
   @Post(':id/generate-invoice')
   @Roles(Role.SUPER_ADMIN)
   @ApiOperation({ summary: 'Generate monthly invoice for a pesantren' })
-  async generateInvoice(@Param('id') id: string) {
-    return this.tenantService.generateInvoice(id);
+  async generateInvoice(@Param('id') id: string, @Body() body?: { items?: Array<{name: string, amount: number}> }) {
+    return this.tenantService.generateInvoice(id, body?.items);
   }
 
   @Post('generate-all-invoices')

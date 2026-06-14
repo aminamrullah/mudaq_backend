@@ -127,8 +127,9 @@ export class StudentController {
     @Query('entry_year') ey?: string,
     @Query('sort') sort?: string,
     @Query('order') order?: string,
+    @Query('unit_id') unitId?: string,
   ) {
-    return this.studentService.findAll(t, p, l, s, st, cid, did, drid, ttid, qtid, ktid, ey, sort, order);
+    return this.studentService.findAll(t, p, l, s, st, cid, did, drid, ttid, qtid, ktid, ey, sort, order, unitId);
   }
 
   @Get(':id')

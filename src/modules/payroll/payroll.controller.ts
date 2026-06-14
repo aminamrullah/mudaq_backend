@@ -51,6 +51,16 @@ export class PayrollController {
     return this.svc.findAll(t, p, l);
   }
 
+  @Get('my-payrolls')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN, Role.STAFF_PESANTREN, Role.USTAD)
+  @ApiOperation({ summary: 'Get current user payroll history' })
+  findMyPayrolls(
+    @CurrentUser('tenant_uuid') t: string,
+    @CurrentUser('id') uid: string,
+  ) {
+    return this.svc.findMyPayrolls(t, uid);
+  }
+
   @Get(':id')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN)
   findOne(@CurrentUser('tenant_uuid') t: string, @Param('id') id: string) {

@@ -1353,7 +1353,10 @@ export class KoperasiService implements OnModuleInit {
       where,
       include: { 
         category: { select: { name: true } },
-        outlet: { select: { name: true } }
+        outlet: { select: { name: true } },
+        promo_products: {
+          include: { promotion: true }
+        }
       },
       orderBy: { name: 'asc' }
     });
@@ -1480,14 +1483,28 @@ export class KoperasiService implements OnModuleInit {
         tenant_uuid: tenantUuid, 
         outlet_id: dto.outlet_id,
         is_active: true 
-      }
+      },
+      include: { promo_products: true }
     });
     if (products.length !== Array.from(new Set(productIds)).length) {
       throw new BadRequestException('Beberapa produk tidak tersedia di outlet ini');
     }
     const productMap = new Map(products.map(p => [p.id, p]));
 
+    const now = new Date();
+    const allActivePromos = await this.prisma.promotion.findMany({
+      where: { 
+        tenant_uuid: tenantUuid,
+        outlet_id: dto.outlet_id, 
+        is_active: true,
+        start_date: { lte: now },
+        end_date: { gte: now }
+      }
+    });
+
     let subtotal = 0;
+    let discount = 0;
+    let promoData: any = null;
     const orderItems: any[] = [];
 
     for (const item of dto.items) {
@@ -1501,6 +1518,26 @@ export class KoperasiService implements OnModuleInit {
       const itemTotal = Number(product.price) * item.quantity;
       subtotal += itemTotal;
 
+      // Calculate automatic item discount
+      const applicableItemPromos = allActivePromos.filter(p => {
+        if (p.id === dto.promo_id) return false;
+        if (p.apply_to === 'all') return true;
+        return product.promo_products?.some((pp: any) => pp.promotion_id === p.id);
+      });
+
+      let bestItemDisc = 0;
+      for (const p of applicableItemPromos) {
+        let d = 0;
+        if (p.discount_type === 'percentage') {
+          d = Number(product.price) * (Number(p.discount_value) / 100);
+          if (p.max_discount && d > Number(p.max_discount)) d = Number(p.max_discount);
+        } else {
+          d = Number(p.discount_value);
+        }
+        if (d > bestItemDisc) bestItemDisc = d;
+      }
+      discount += (bestItemDisc * item.quantity);
+
       orderItems.push({
         product_id: product.id,
         product_name: product.name,
@@ -1511,7 +1548,35 @@ export class KoperasiService implements OnModuleInit {
       });
     }
 
-    const total = subtotal; 
+    if (dto.promo_id) {
+      const promo = allActivePromos.find(p => p.id === dto.promo_id);
+      if (promo) {
+         let applicableAmount = subtotal;
+         if (promo.apply_to === 'selected_products') {
+           const promoWithItems = await this.prisma.promotion.findFirst({
+             where: { id: promo.id, tenant_uuid: tenantUuid },
+             include: { products: true },
+           });
+           const eligibleProductIds = promoWithItems?.products.map(p => p.product_id) || [];
+           applicableAmount = orderItems
+             .filter(item => eligibleProductIds.includes(item.product_id))
+             .reduce((sum, item) => sum + item.subtotal, 0);
+         }
+
+         if (applicableAmount > 0 && subtotal >= Number(promo.min_purchase)) {
+           promoData = promo;
+           if (promo.discount_type === 'percentage') {
+             let discVal = applicableAmount * (Number(promo.discount_value) / 100);
+             if (promo.max_discount && discVal > Number(promo.max_discount)) discVal = Number(promo.max_discount);
+             discount += discVal;
+           } else {
+             discount += Number(promo.discount_value);
+           }
+         }
+      }
+    }
+
+    const total = subtotal - discount; 
     
     // Check wallet balance
     const wallet = await this.prisma.wallet.findFirst({
@@ -1542,6 +1607,9 @@ export class KoperasiService implements OnModuleInit {
         student_id: dto.student_id,
         cashier_id: userId, // The wali santri user acts as the "cashier" who initiated the order
         subtotal: new Prisma.Decimal(subtotal),
+        discount: new Prisma.Decimal(discount),
+        promo_id: promoData?.id || null,
+        promo_name: promoData?.name || null,
         total: new Prisma.Decimal(total),
         payment_method: dto.payment_method || 'wallet',
         status: 'pending',

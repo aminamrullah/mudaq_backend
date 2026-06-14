@@ -34,7 +34,10 @@ export class UserService {
       tenant_uuid: tenantUuid,
       password: await bcrypt.hash(dto.password, 12),
       base_salary: dto.base_salary ? new Prisma.Decimal(dto.base_salary) : undefined,
+      work_attendance_rate: dto.work_attendance_rate ? new Prisma.Decimal(dto.work_attendance_rate) : undefined,
+      overtime_rate: dto.overtime_rate ? new Prisma.Decimal(dto.overtime_rate) : undefined,
     };
+    if (payload.work_schedule_id === '') payload.work_schedule_id = null;
 
     if (!payload.koperasi_outlet_id) delete payload.koperasi_outlet_id;
     if (!payload.unit_id) delete payload.unit_id;
@@ -56,14 +59,16 @@ export class UserService {
     });
   }
 
-  async findAll(tenantUuid: string | null, page = 1, limit = 50, role?: string) {
+  async findAll(tenantUuid: string | null, page = 1, limit = 50, role?: string, unitIdParam?: string) {
     const where: any = { deleted_at: null };
     if (tenantUuid) where.tenant_uuid = tenantUuid;
     if (role) where.role = role;
 
-    const unitId = this.cls.get('unit_id');
-    if (unitId) {
-      where.unit_id = unitId;
+    const clsUnitId = this.cls.get('unit_id');
+    if (clsUnitId) {
+      where.unit_id = clsUnitId;
+    } else if (unitIdParam) {
+      where.unit_id = unitIdParam;
     }
 
     const [data, total] = await Promise.all([
@@ -151,6 +156,9 @@ export class UserService {
     const data: any = { ...dto };
     if (dto.password) data.password = await bcrypt.hash(dto.password, 12);
     if (dto.base_salary !== undefined) data.base_salary = new Prisma.Decimal(dto.base_salary);
+    if (dto.work_attendance_rate !== undefined) data.work_attendance_rate = new Prisma.Decimal(dto.work_attendance_rate);
+    if (dto.overtime_rate !== undefined) data.overtime_rate = new Prisma.Decimal(dto.overtime_rate);
+    if (dto.work_schedule_id === '') data.work_schedule_id = null;
     
     return this.prisma.user.update({
       where: { id },

@@ -8,6 +8,7 @@ import {
   Param,
   UseGuards,
   Req,
+  ForbiddenException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
@@ -28,14 +29,22 @@ export class PpdbController {
   @Get('status')
   @Roles(Role.ADMIN_PESANTREN, Role.SUPER_ADMIN, Role.STAFF_PESANTREN)
   @ApiOperation({ summary: 'Get PPDB status (active/inactive)' })
-  async getStatus(@CurrentUser('tenant_uuid') t: string) {
+  async getStatus(@CurrentUser('tenant_uuid') t: string, @Req() req: any) {
+    const tenant = await this.ppdbService.getTenantWithAddon(t);
+    if (!tenant?.addon_ppdb && req.user.role !== Role.SUPER_ADMIN) {
+      throw new ForbiddenException('Fitur PPDB adalah addon yang belum diaktifkan untuk pesantren ini');
+    }
     return this.ppdbService.getPpdbStatus(t);
   }
 
   @Post('status')
   @Roles(Role.ADMIN_PESANTREN, Role.STAFF_PESANTREN)
   @ApiOperation({ summary: 'Toggle PPDB status' })
-  async toggleStatus(@CurrentUser('tenant_uuid') t: string, @Body('is_active') isActive: boolean) {
+  async toggleStatus(@CurrentUser('tenant_uuid') t: string, @Body('is_active') isActive: boolean, @Req() req: any) {
+    const tenant = await this.ppdbService.getTenantWithAddon(t);
+    if (!tenant?.addon_ppdb && req.user.role !== Role.SUPER_ADMIN) {
+      throw new ForbiddenException('Fitur PPDB adalah addon yang belum diaktifkan untuk pesantren ini');
+    }
     return this.ppdbService.togglePpdbStatus(t, isActive);
   }
 

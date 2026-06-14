@@ -154,17 +154,20 @@ export class AcademicService {
         tenant_uuid: tenantId,
         ...(unitId ? { unit_id: unitId } : {})
       },
-      include: { homeroom: true, academic_year: true },
+      include: { homeroom: true, academic_year: true, unit: true },
     });
   }
 
   async createClassroom(tenantId: string, dto: CreateClassroomDto) {
+    const unitId = await this.resolveClassroomUnitId(tenantId, dto.unit_id);
+    await this.validateHomeroomTeacherUnit(tenantId, dto.homeroom_teacher_id, unitId);
+
     return this.prisma.classroom.create({
       data: {
         tenant_uuid: tenantId,
-        unit_id: this.cls.get('unit_id') || undefined,
+        unit_id: unitId || undefined,
         name: dto.name,
-        level: dto.level,
+        level: await this.resolveClassroomLevel(tenantId, unitId, dto.level),
         academic_year_id: dto.academic_year_id || undefined,
         homeroom_teacher_id: dto.homeroom_teacher_id || undefined,
         capacity: dto.capacity || 40,
@@ -173,9 +176,24 @@ export class AcademicService {
   }
 
   async updateClassroom(tenantId: string, id: string, dto: UpdateClassroomDto) {
+    const existing = await this.prisma.classroom.findFirst({
+      where: { id, tenant_uuid: tenantId },
+      select: { unit_id: true, level: true, homeroom_teacher_id: true },
+    });
+    if (!existing) throw new NotFoundException('Kelas tidak ditemukan');
+
     const data: any = { ...dto };
+    const contextUnitId = this.cls.get('unit_id');
+    const hasUnitPayload = Object.prototype.hasOwnProperty.call(dto, 'unit_id');
+    const requestedUnitId = contextUnitId || (hasUnitPayload ? dto.unit_id : existing.unit_id);
+    const unitId = await this.resolveClassroomUnitId(tenantId, requestedUnitId);
+
+    data.unit_id = unitId;
+    data.level = await this.resolveClassroomLevel(tenantId, unitId, dto.level ?? existing.level ?? undefined);
     if (data.academic_year_id === '') data.academic_year_id = undefined;
     if (data.homeroom_teacher_id === '') data.homeroom_teacher_id = null;
+    const homeroomTeacherId = data.homeroom_teacher_id === undefined ? existing.homeroom_teacher_id : data.homeroom_teacher_id;
+    await this.validateHomeroomTeacherUnit(tenantId, homeroomTeacherId, unitId);
 
     return this.prisma.classroom.update({
       where: { id, tenant_uuid: tenantId },
@@ -187,6 +205,61 @@ export class AcademicService {
     return this.prisma.classroom.delete({
       where: { id, tenant_uuid: tenantId },
     });
+  }
+
+  private async resolveClassroomUnitId(tenantId: string, requestedUnitId?: string | null) {
+    const contextUnitId = this.cls.get('unit_id');
+    const unitId = contextUnitId || requestedUnitId || null;
+
+    if (!unitId) return null;
+
+    const unit = await this.prisma.educationUnit.findFirst({
+      where: { id: unitId, tenant_uuid: tenantId, is_active: true },
+      select: { id: true },
+    });
+    if (!unit) throw new BadRequestException('Unit pendidikan tidak ditemukan atau tidak aktif');
+
+    return unitId;
+  }
+
+  private async resolveClassroomLevel(tenantId: string, unitId: string | null, fallbackLevel?: string) {
+    if (!unitId) return fallbackLevel || null;
+
+    const unit = await this.prisma.educationUnit.findFirst({
+      where: { id: unitId, tenant_uuid: tenantId },
+      select: { tingkat: true },
+    });
+
+    return unit?.tingkat || fallbackLevel || null;
+  }
+
+  private async validateHomeroomTeacherUnit(tenantId: string, teacherId?: string | null, unitId?: string | null) {
+    if (!teacherId) return;
+
+    const teacher = await this.prisma.teacher.findFirst({
+      where: {
+        id: teacherId,
+        tenant_uuid: tenantId,
+        deleted_at: null,
+        ...(unitId
+          ? {
+              OR: [
+                { unit_id: unitId },
+                { assigned_units: { some: { unit_id: unitId } } },
+              ],
+            }
+          : { unit_id: null }),
+      },
+      select: { id: true },
+    });
+
+    if (!teacher) {
+      throw new BadRequestException(
+        unitId
+          ? 'Wali kelas harus guru yang berada di unit pendidikan tersebut'
+          : 'Wali kelas untuk kelas pusat harus guru pesantren pusat',
+      );
+    }
   }
 
   // ==========================================
@@ -315,7 +388,7 @@ export class AcademicService {
 
     if (unitId) {
       where.classroom = {
-        OR: [{ unit_id: unitId }, { unit_id: null }]
+        unit_id: unitId
       };
     }
 
@@ -374,6 +447,8 @@ export class AcademicService {
   }
 
   async createSchedule(tenantId: string, dto: CreateScheduleDto) {
+    await this.validateScheduleScope(tenantId, dto);
+
     return this.prisma.schedule.create({
       data: {
         tenant_uuid: tenantId,
@@ -389,9 +464,26 @@ export class AcademicService {
   }
 
   async updateSchedule(tenantId: string, id: string, dto: UpdateScheduleDto) {
+    const existing = await this.prisma.schedule.findFirst({
+      where: { id, tenant_uuid: tenantId },
+      select: {
+        classroom_id: true,
+        subject_id: true,
+        teacher_id: true,
+        kitab_id: true,
+      },
+    });
+    if (!existing) throw new NotFoundException('Jadwal tidak ditemukan');
+
     const data: any = { ...dto };
     if (data.teacher_id === '') data.teacher_id = null;
     if (data.kitab_id === '') data.kitab_id = null;
+    await this.validateScheduleScope(tenantId, {
+      classroom_id: data.classroom_id ?? existing.classroom_id,
+      subject_id: data.subject_id ?? existing.subject_id,
+      teacher_id: data.teacher_id === undefined ? existing.teacher_id : data.teacher_id,
+      kitab_id: data.kitab_id === undefined ? existing.kitab_id : data.kitab_id,
+    });
 
     return this.prisma.schedule.update({
       where: { id, tenant_uuid: tenantId },
@@ -400,9 +492,79 @@ export class AcademicService {
   }
 
   async deleteSchedule(tenantId: string, id: string) {
+    const unitId = this.cls.get('unit_id');
+    if (unitId) {
+      const schedule = await this.prisma.schedule.findFirst({
+        where: { id, tenant_uuid: tenantId, classroom: { unit_id: unitId } },
+        select: { id: true },
+      });
+      if (!schedule) throw new NotFoundException('Jadwal tidak ditemukan');
+    }
+
     return this.prisma.schedule.delete({
       where: { id, tenant_uuid: tenantId },
     });
+  }
+
+  private async validateScheduleScope(tenantId: string, dto: any) {
+    if (!dto.classroom_id) throw new BadRequestException('Kelas wajib dipilih');
+
+    const contextUnitId = this.cls.get('unit_id');
+    const classroom = await this.prisma.classroom.findFirst({
+      where: {
+        id: dto.classroom_id,
+        tenant_uuid: tenantId,
+        ...(contextUnitId ? { unit_id: contextUnitId } : {}),
+      },
+      select: { id: true, unit_id: true },
+    });
+    if (!classroom) throw new BadRequestException('Kelas tidak ditemukan atau bukan milik unit ini');
+
+    const unitId = classroom.unit_id;
+
+    if (dto.subject_id) {
+      const subject = await this.prisma.subject.findFirst({
+        where: {
+          id: dto.subject_id,
+          tenant_uuid: tenantId,
+          OR: [{ unit_id: unitId }, { unit_id: null }],
+        },
+        select: { id: true },
+      });
+      if (!subject) throw new BadRequestException('Mata pelajaran tidak sesuai dengan unit kelas');
+    }
+
+    if (dto.teacher_id) {
+      const teacher = await this.prisma.teacher.findFirst({
+        where: {
+          id: dto.teacher_id,
+          tenant_uuid: tenantId,
+          deleted_at: null,
+          ...(unitId
+            ? {
+                OR: [
+                  { unit_id: unitId },
+                  { assigned_units: { some: { unit_id: unitId } } },
+                ],
+              }
+            : { unit_id: null }),
+        },
+        select: { id: true },
+      });
+      if (!teacher) throw new BadRequestException('Guru tidak sesuai dengan unit kelas');
+    }
+
+    if (dto.kitab_id) {
+      const kitab = await this.prisma.kitab.findFirst({
+        where: {
+          id: dto.kitab_id,
+          tenant_uuid: tenantId,
+          OR: [{ unit_id: unitId }, { unit_id: null }],
+        },
+        select: { id: true },
+      });
+      if (!kitab) throw new BadRequestException('Kitab atau buku ajar tidak sesuai dengan unit kelas');
+    }
   }
 
   // ==========================================

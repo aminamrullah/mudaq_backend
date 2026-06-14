@@ -11,7 +11,7 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { TeacherAttendanceService } from './teacher-attendance.service';
-import { CreateTeacherAttendanceDto, BulkTeacherAttendanceDto, TeacherCheckInDto } from './dto/teacher-attendance.dto';
+import { CreateTeacherAttendanceDto, BulkTeacherAttendanceDto, TeacherCheckInDto, TeacherLeaveDto } from './dto/teacher-attendance.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { TenantGuard } from '../../common/guards/tenant.guard';
@@ -44,7 +44,18 @@ export class TeacherAttendanceController {
     @CurrentUser('id') userId: string,
     @Body() dto: TeacherCheckInDto,
   ) {
-    return this.svc.checkIn(t, userId, dto.schedule_id, dto.date, dto.timestamp, dto.image_base64);
+    return this.svc.checkIn(t, userId, dto.schedule_id, dto.date, dto.timestamp, dto.image_base64, dto.latitude, dto.longitude);
+  }
+
+  @Post('leave')
+  @Roles(Role.USTAD)
+  @ApiOperation({ summary: 'Submit leave/izin for an upcoming schedule' })
+  requestLeave(
+    @CurrentUser('tenant_uuid') t: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: TeacherLeaveDto,
+  ) {
+    return this.svc.requestLeave(t, userId, dto);
   }
 
   @Get('status')

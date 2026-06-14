@@ -112,3 +112,46 @@ export class ResetPasswordDto {
   @MinLength(6, { message: 'Password minimal 6 karakter' })
   new_password: string;
 }
+
+export class RegisterWalisantriDto {
+  @ApiProperty({ example: 'Ahmad Fauzi', required: false })
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @ApiProperty({ example: '081234567890' })
+  @IsNotEmpty({ message: 'Nomor HP harus diisi' })
+  @IsString()
+  phone: string;
+
+  @ApiProperty({ example: 'password123' })
+  @IsNotEmpty({ message: 'Password harus diisi' })
+  @IsString()
+  @MinLength(6, { message: 'Password minimal 6 karakter' })
+  password: string;
+}
+
+export class LoginWalisantriDto {
+  @ApiProperty({ example: '081234567890' })
+  @IsNotEmpty({ message: 'Nomor HP harus diisi' })
+  @IsString()
+  phone: string;
+
+  @ApiProperty({ example: 'password123' })
+  @IsNotEmpty({ message: 'Password harus diisi' })
+  @IsString()
+  password: string;
+}
+
+export class VerifyRegistrationOtpDto {
+  @ApiProperty({ example: '081234567890' })
+  @IsNotEmpty({ message: 'Nomor HP harus diisi' })
+  @IsString()
+  phone: string;
+
+  @ApiProperty({ example: '123456' })
+  @IsNotEmpty({ message: 'Kode OTP harus diisi' })
+  @IsString()
+  @MinLength(6, { message: 'Kode OTP minimal 6 digit' })
+  otp: string;
+}

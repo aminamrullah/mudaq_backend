@@ -42,6 +42,11 @@ export class WebhookController {
     }
 
     this.logger.log(`Received Xendit Webhook for ${externalId}`);
+
+    if (externalId.startsWith('WD-')) {
+      await this.handlePayoutStatus(externalId, body);
+      return { success: true };
+    }
     
     // Status depends on method: 'PAID' for invoices, 'COMPLETED' for QRIS.
     // For VA, the payment callback has 'amount' and 'external_id' and usually 'transaction_id' (Xendit's)
@@ -61,6 +66,58 @@ export class WebhookController {
     }
 
     return { success: true };
+  }
+
+  private mapPayoutStatus(status?: string) {
+    const normalized = (status || '').toUpperCase();
+    if (['SUCCEEDED', 'COMPLETED', 'SUCCESS'].includes(normalized)) return 'succeeded';
+    if (['FAILED', 'CANCELLED', 'EXPIRED'].includes(normalized)) return 'failed';
+    return 'processing';
+  }
+
+  private async handlePayoutStatus(referenceId: string, body: any) {
+    const status = this.mapPayoutStatus(body.status);
+    const failureCode =
+      body.failure_code ||
+      body.failure_reason ||
+      body.error_code ||
+      body.error ||
+      null;
+    const failureMessage =
+      body.failure_message ||
+      body.failure_description ||
+      body.message ||
+      body.error_message ||
+      null;
+
+    const request = await this.prisma.tenantWithdrawalRequest.findFirst({
+      where: {
+        OR: [
+          { payout_reference_id: referenceId } as any,
+          { xendit_payout_id: body.id } as any,
+        ],
+      } as any,
+    });
+
+    if (!request) {
+      this.logger.warn(`Payout webhook ${referenceId} not found`);
+      return;
+    }
+
+    await this.prisma.tenantWithdrawalRequest.update({
+      where: { id: request.id },
+      data: {
+        status,
+        xendit_payout_id: body.id || (request as any).xendit_payout_id,
+        payout_reference_id: referenceId,
+        payout_status: body.status,
+        failure_code: status === 'failed' ? failureCode : null,
+        failure_message: status === 'failed' ? failureMessage : null,
+        processed_at: status === 'processing' ? null : new Date(),
+      } as any,
+    });
+
+    this.logger.log(`Payout ${referenceId} synced as ${status}`);
   }
 
   private async handleTopupPaid(externalId: string, body: any) {
@@ -191,7 +248,7 @@ export class WebhookController {
           xenditFee = transactions.length > 1 ? (4500 * 1.11) / transactions.length : (4500 * 1.11);
         }
         
-        const netAmount = Math.max(0, billReductionAmount - platformFee - xenditFee);
+        const netAmount = Math.max(0, billReductionAmount + surcharge - platformFee - xenditFee);
         const newPaid = Number(bill.amount_paid) + billReductionAmount;
         const newStatus = newPaid >= Number(bill.amount) ? 'paid' : 'partial';
 

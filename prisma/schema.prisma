@@ -12,6 +12,7 @@ datasource db {
 // ═══════════════════════════════════════════════════════════════
 model Pesantren {
   student_registrations StudentRegistration[]
+  announcement_targets AnnouncementTarget[]
   id                    String                @id @default(uuid()) @db.Uuid
   name                  String
   slug                  String                @unique
@@ -28,9 +29,19 @@ model Pesantren {
   surcharge_fee         Decimal @default(0) @db.Decimal(12, 2) // Extra amount added to student bill for VA/Invoice
   qris_platform_fee     Decimal @default(0) @db.Decimal(12, 2) // Total fee taken by platform for QRIS
   qris_surcharge_fee    Decimal @default(0) @db.Decimal(12, 2) // Extra amount added to student bill for QRIS
+  xendit_fee_user       Decimal @default(0) @db.Decimal(12, 2) // Xendit fee charged to user for VA/Invoice
+  platform_fee_user     Decimal @default(0) @db.Decimal(12, 2) // Platform fee charged to user for VA/Invoice
+  platform_fee_tenant   Decimal @default(0) @db.Decimal(12, 2) // Platform fee deducted from tenant principal for VA/Invoice
+  qris_xendit_fee_user     Decimal @default(0) @db.Decimal(12, 2) // Xendit fee charged to user for QRIS
+  qris_platform_fee_user   Decimal @default(0) @db.Decimal(12, 2) // Platform fee charged to user for QRIS
+  qris_platform_fee_tenant Decimal @default(0) @db.Decimal(12, 2) // Platform fee deducted from tenant principal for QRIS
   qris_fee_is_percent   Boolean @default(false)
   manual_topup_fee      Decimal @default(0) @db.Decimal(12, 2) // Biaya admin untuk top up manual oleh pesantren
   xendit_status         String  @default("inactive") // active, inactive
+  gateway_bank_channel_code String? // Default payout channel, e.g. ID_BCA
+  gateway_bank_name         String?
+  gateway_bank_account_no   String?
+  gateway_bank_account_name String?
 
   // Subscription
   subscription_status  String    @default("trial") // trial, active, suspended, expired
@@ -44,22 +55,20 @@ model Pesantren {
   billing_email        String?
   max_students         Int       @default(500)
 
-  // Landing Page Configuration
-  description             String? @db.Text
-  landing_page_template   String  @default("MODERN")
-  landing_page_config     Json?   @default("{\"primaryColor\": \"#10b981\", \"secondaryColor\": \"#064e3b\", \"heroTitle\": \"Selamat Datang\", \"heroSubtitle\": \"Membangun Generasi Rabbani\", \"fontFamily\": \"Inter\"}")
-  can_manage_landing_page Boolean @default(false)
+// Add-ons / Fitur Tambahan
+   addon_koperasi            Boolean @default(false)
+   addon_wa_gateway          Boolean @default(false)
+   addon_ppdb                Boolean @default(false)
+   addon_inventaris          Boolean @default(false)
+   addon_rfid                Boolean @default(false)
+   addon_donasi              Boolean @default(false)
+   addon_payroll             Boolean @default(false)
+   addon_kepegawaian         Boolean @default(false)
+   min_tenant_wallet_balance Decimal @default(0) @db.Decimal(12, 2)
+   storage_limit             BigInt  @default(1073741824) // 1GB
+   storage_used              BigInt  @default(0)
 
-  // Add-ons / Fitur Tambahan
-  addon_koperasi            Boolean @default(false)
-  addon_wa_gateway          Boolean @default(false)
-  addon_landing_page        Boolean @default(false)
-  min_tenant_wallet_balance Decimal @default(0) @db.Decimal(12, 2)
-  storage_limit             BigInt  @default(1073741824) // 1GB
-  storage_used              BigInt  @default(0)
-  addon_inventaris          Boolean @default(false)
-
-  is_active  Boolean   @default(true)
+   is_active  Boolean   @default(true)
   created_at DateTime  @default(now())
   updated_at DateTime  @updatedAt
   deleted_at DateTime?
@@ -109,6 +118,7 @@ model Pesantren {
   daily_assignments          DailyAssignment[]
   assignment_grades          AssignmentGrade[]
   expenditures               Expenditure[]
+  incomes                    Income[]
   user_activities            UserActivity[]
   problem_tickets            ProblemTicket[]
   koperasi_outlets           KoperasiOutlet[]
@@ -127,6 +137,12 @@ model Pesantren {
   inventory_categories InventoryCategory[]
   inventory_locations  InventoryLocation[]
   inventory_mutations  InventoryMutation[]
+
+  employee_work_schedules EmployeeWorkSchedule[]
+  employee_attendances    EmployeeAttendance[]
+  employee_overtimes      EmployeeOvertime[]
+  employee_permissions    EmployeePermission[]
+  teaching_permissions    TeachingPermission[]
 
   // PPDB (Student Registration)
   ppdb_is_active  Boolean         @default(false)
@@ -170,6 +186,7 @@ model EducationUnit {
   transactions        Transaction[]
   StudentRegistration StudentRegistration[]
   kitabs              Kitab[]
+  employee_work_schedules EmployeeWorkSchedule[]
 
   @@unique([tenant_uuid, name])
   @@index([tenant_uuid])
@@ -216,8 +233,15 @@ model User {
   password      String
   role          Role      @default(STAFF_PESANTREN)
   is_active     Boolean   @default(true)
+  is_verified   Boolean   @default(true)
   base_salary   Decimal   @default(0) @db.Decimal(12, 2)
+  is_work_attendance_required Boolean @default(false)
+  work_schedule_id String?   @db.Uuid
+  work_attendance_rate Decimal @default(0) @db.Decimal(12, 2)
+  overtime_rate Decimal @default(0) @db.Decimal(12, 2)
   last_login_at DateTime?
+  rfid          String?
+  fingerprint_id String?
   created_at    DateTime  @default(now())
   updated_at    DateTime  @updatedAt
   deleted_at    DateTime?
@@ -240,6 +264,15 @@ model User {
   stock_movements    StockMovement[]
 
   user_wallet        UserWallet?
+
+  work_schedule      EmployeeWorkSchedule? @relation(fields: [work_schedule_id], references: [id])
+  work_attendances   EmployeeAttendance[]
+  work_overtimes     EmployeeOvertime[]
+  work_permissions   EmployeePermission[]
+  
+  approved_overtimes      EmployeeOvertime[]    @relation("OvertimeApprover")
+  approved_employee_perms EmployeePermission[]  @relation("EmployeePermissionApprover")
+  approved_teaching_perms TeachingPermission[]  @relation("TeachingPermissionApprover")
 
   @@index([tenant_uuid])
   @@index([email])
@@ -449,6 +482,7 @@ model Schedule {
   kitab               Kitab?              @relation(fields: [kitab_id], references: [id])
   attendances         Attendance[]
   teacher_attendances TeacherAttendance[]
+  teaching_permissions TeachingPermission[]
   teaching_journals   TeachingJournal[]
 
   @@index([tenant_uuid])
@@ -634,6 +668,9 @@ model Teacher {
   status             String    @default("active") // active, inactive, resigned
   stay_type          String? // mukim, non-mukim
   photo              String?
+  rfid               String?
+  fingerprint_id     String?
+  teaching_attendance_rate Decimal @default(0) @db.Decimal(12, 2)
   is_tahfidz_teacher Boolean   @default(false)
   can_manage_quran   Boolean   @default(false)
   can_manage_kitab   Boolean   @default(false)
@@ -660,6 +697,7 @@ model Teacher {
   exam_supervisor_schedules ExamSchedule[]         @relation("ExamSupervisor")
   attendances               TeacherAttendance[]
   teaching_journals         TeachingJournal[]
+  teaching_permissions      TeachingPermission[]
   daily_assignments         DailyAssignment[]
   assigned_units            TeacherEducationUnit[]
 
@@ -929,7 +967,7 @@ model TenantWallet {
 model TenantWalletTransaction {
   id             String   @id @default(uuid()) @db.Uuid
   tenant_uuid    String   @db.Uuid
-  type           String // deposit_from_superadmin, withdraw_to_superadmin, student_topup, student_withdraw
+  type           String // tenant_operational_deposit, tenant_operational_withdrawal, tenant_float_distribution, cash_student_topup, cash_student_withdrawal, user_cash_topup, user_cash_withdrawal
   amount         Decimal  @db.Decimal(12, 2)
   balance_before Decimal  @db.Decimal(12, 2)
   balance_after  Decimal  @db.Decimal(12, 2)
@@ -1125,6 +1163,7 @@ model SaasInvoice {
   status      String    @default("unpaid") // unpaid, paid, overdue
   due_date    DateTime  @db.Date
   paid_at     DateTime?
+  items       Json?
   created_at  DateTime  @default(now())
   updated_at  DateTime  @updatedAt
 
@@ -1155,6 +1194,33 @@ model GlobalConfig {
   value String
 
   @@map("global_configs")
+}
+
+model Announcement {
+  id          String   @id @default(uuid()) @db.Uuid
+  title       String
+  content     String   @db.Text
+  is_active   Boolean  @default(true)
+  target_all  Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+  
+  targets     AnnouncementTarget[]
+  
+  @@map("announcements")
+}
+
+model AnnouncementTarget {
+  id              String   @id @default(uuid()) @db.Uuid
+  announcement_id String   @db.Uuid
+  tenant_uuid     String   @db.Uuid
+
+  announcement    Announcement @relation(fields: [announcement_id], references: [id], onDelete: Cascade)
+  pesantren       Pesantren    @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+
+  @@index([announcement_id])
+  @@index([tenant_uuid])
+  @@map("announcement_targets")
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1367,6 +1433,9 @@ model TeacherAttendance {
   status      String // hadir, izin, sakit, alpha
   check_in    DateTime?
   check_out   DateTime?
+  latitude    Float?
+  longitude   Float?
+  face_image  String?   @db.Text
   notes       String?
   created_at  DateTime  @default(now())
   updated_at  DateTime  @updatedAt
@@ -1489,6 +1558,25 @@ model Expenditure {
 
   @@index([tenant_uuid])
   @@map("expenditures")
+}
+
+model Income {
+  id             String   @id @default(uuid()) @db.Uuid
+  tenant_uuid    String   @db.Uuid
+  title          String
+  amount         Decimal  @db.Decimal(12, 2)
+  date           DateTime @default(now())
+  category       String?  // SPP, Donasi, Dana BOS, Hibah, Usaha, Lainnya
+  description    String?
+  payment_method String   @default("cash") // cash, transfer
+  attachment_url String?
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+
+  @@index([tenant_uuid])
+  @@map("incomes")
 }
 
 model UserActivity {
@@ -1955,20 +2043,28 @@ model InventoryMutation {
 }
 
 model TenantWithdrawalRequest {
-  id           String   @id @default(uuid()) @db.Uuid
-  tenant_uuid  String   @db.Uuid
-  amount       Decimal  @db.Decimal(12, 2)
-  bank_name    String
-  account_no   String
-  account_name String
-  status       String   @default("pending") // pending, approved, rejected
-  notes        String?
-  created_at   DateTime @default(now())
-  updated_at   DateTime @updatedAt
+  id                  String    @id @default(uuid()) @db.Uuid
+  tenant_uuid         String    @db.Uuid
+  amount              Decimal   @db.Decimal(12, 2)
+  bank_channel_code   String? // Xendit payout channel, e.g. ID_BCA
+  bank_name           String
+  account_no          String
+  account_name        String
+  status              String    @default("pending") // pending, processing, succeeded, failed, rejected
+  notes               String?
+  xendit_payout_id    String?
+  payout_reference_id String?   @unique
+  payout_status       String?
+  failure_code        String?
+  failure_message     String?
+  processed_at        DateTime?
+  created_at          DateTime  @default(now())
+  updated_at          DateTime  @updatedAt
 
   pesantren Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
 
   @@index([tenant_uuid])
+  @@index([xendit_payout_id])
   @@map("tenant_withdrawal_requests")
 }
 
@@ -2007,4 +2103,132 @@ model ShalatAttendance {
   @@index([student_id])
   @@index([date])
   @@map("shalat_attendances")
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  EMPLOYEE ATTENDANCE & HR
+// ═══════════════════════════════════════════════════════════════
+
+model EmployeeWorkSchedule {
+  id                String   @id @default(uuid()) @db.Uuid
+  tenant_uuid       String   @db.Uuid
+  unit_id           String?  @db.Uuid
+  name              String
+  check_in_start    String   // Format "HH:mm" e.g. "06:00"
+  check_in_end      String   // Format "HH:mm" e.g. "08:00"
+  check_out_start   String   // Format "HH:mm" e.g. "15:00"
+  check_out_end     String   // Format "HH:mm" e.g. "18:00"
+  latitude          Float?
+  longitude         Float?
+  max_radius_meters Int      @default(50)
+  is_active         Boolean  @default(true)
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  pesantren         Pesantren       @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  unit              EducationUnit?  @relation(fields: [unit_id], references: [id])
+  users             User[]
+
+  @@index([tenant_uuid])
+  @@map("employee_work_schedules")
+}
+
+model EmployeeAttendance {
+  id              String   @id @default(uuid()) @db.Uuid
+  tenant_uuid     String   @db.Uuid
+  user_id         String   @db.Uuid
+  date            DateTime @db.Date
+  status          String   // hadir, izin, sakit, alpha
+  check_in_time   DateTime?
+  check_in_lat    Float?
+  check_in_lng    Float?
+  check_in_photo  String?  @db.Text
+  check_out_time  DateTime?
+  check_out_lat   Float?
+  check_out_lng   Float?
+  check_out_photo String?  @db.Text
+  notes           String?
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  pesantren       Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  user            User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  overtime        EmployeeOvertime?
+
+  @@unique([user_id, date])
+  @@index([tenant_uuid])
+  @@index([user_id])
+  @@map("employee_attendances")
+}
+
+model EmployeeOvertime {
+  id                     String   @id @default(uuid()) @db.Uuid
+  tenant_uuid            String   @db.Uuid
+  employee_attendance_id String   @unique @db.Uuid
+  user_id                String   @db.Uuid
+  date                   DateTime @db.Date
+  start_time             DateTime
+  end_time               DateTime
+  duration_hours         Decimal  @db.Decimal(5, 2)
+  reason                 String?
+  status                 String   @default("pending") // pending, approved, rejected
+  approved_by            String?  @db.Uuid
+  notes                  String?
+  created_at             DateTime @default(now())
+  updated_at             DateTime @updatedAt
+
+  pesantren       Pesantren          @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  attendance      EmployeeAttendance @relation(fields: [employee_attendance_id], references: [id], onDelete: Cascade)
+  user            User               @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  approver        User?              @relation("OvertimeApprover", fields: [approved_by], references: [id])
+
+  @@index([tenant_uuid])
+  @@index([user_id])
+  @@map("employee_overtimes")
+}
+
+model EmployeePermission {
+  id              String    @id @default(uuid()) @db.Uuid
+  tenant_uuid     String    @db.Uuid
+  user_id         String    @db.Uuid
+  type            String    // sakit, cuti_tahunan, cuti_melahirkan, izin_lain
+  start_date      DateTime  @db.Date
+  end_date        DateTime  @db.Date
+  reason          String?
+  status          String    @default("pending") // pending, approved, rejected
+  approved_by     String?   @db.Uuid
+  notes           String?
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  pesantren       Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  user            User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  approver        User?     @relation("EmployeePermissionApprover", fields: [approved_by], references: [id])
+
+  @@index([tenant_uuid])
+  @@index([user_id])
+  @@map("employee_permissions")
+}
+
+model TeachingPermission {
+  id              String    @id @default(uuid()) @db.Uuid
+  tenant_uuid     String    @db.Uuid
+  teacher_id      String    @db.Uuid
+  schedule_id     String?   @db.Uuid
+  date            DateTime  @db.Date
+  reason          String?
+  status          String    @default("pending") // pending, approved, rejected
+  approved_by     String?   @db.Uuid
+  notes           String?
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  pesantren       Pesantren @relation(fields: [tenant_uuid], references: [id], onDelete: Cascade)
+  teacher         Teacher   @relation(fields: [teacher_id], references: [id], onDelete: Cascade)
+  schedule        Schedule? @relation(fields: [schedule_id], references: [id])
+  approver        User?     @relation("TeachingPermissionApprover", fields: [approved_by], references: [id])
+
+  @@index([tenant_uuid])
+  @@index([teacher_id])
+  @@map("teaching_permissions")
 }

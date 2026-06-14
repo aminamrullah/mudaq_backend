@@ -52,14 +52,21 @@ export class WalletController {
 
   @Post('topup-manual')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN)
-  @ApiOperation({ summary: 'Manual top-up by admin (Cash)' })
+  @ApiOperation({ summary: 'Cash top-up received by tenant' })
   topupManual(@CurrentUser('tenant_uuid') t: string, @Body() dto: TopupDto) {
     return this.svc.createManualTopup(t, dto);
   }
 
+  @Post('distribute')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN)
+  @ApiOperation({ summary: 'Distribute tenant float to a user wallet' })
+  distribute(@CurrentUser('tenant_uuid') t: string, @Body() dto: TopupDto) {
+    return this.svc.distributeTenantWalletToUser(t, dto);
+  }
+
   @Post('withdraw')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN)
-  @ApiOperation({ summary: 'Cash withdrawal by admin' })
+  @ApiOperation({ summary: 'Cash withdrawal paid by tenant' })
   withdraw(
     @CurrentUser('tenant_uuid') t: string,
     @Body() dto: { wallet_id: string; amount: number; pin: string; notes?: string },
@@ -88,58 +95,19 @@ export class WalletController {
     return this.svc.getTenantWallet(t);
   }
 
-  @Post('tenant/topup')
-  @Roles(Role.SUPER_ADMIN)
-  @ApiOperation({ summary: 'Top up Tenant Wallet by Superadmin' })
-  topupTenantWallet(
+  @Get('tenant/finance-summary')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN)
+  @ApiOperation({ summary: 'Get tenant gateway, internal wallet, and cash-book summary' })
+  getTenantFinanceSummary(
     @CurrentUser('tenant_uuid') t: string,
-    @Body() dto: { target_tenant_uuid?: string; amount: number; description?: string },
+    @CurrentUser('role') role: string,
+    @Query('target_tenant_uuid') targetTenantUuid?: string,
   ) {
-    const targetUuid = dto.target_tenant_uuid || t;
-    return this.svc.topupTenantWallet(targetUuid, dto);
+    const tenantUuid = role === Role.SUPER_ADMIN && targetTenantUuid ? targetTenantUuid : t;
+    return this.svc.getTenantFinanceSummary(tenantUuid);
   }
 
-  @Post('tenant/withdraw')
-  @Roles(Role.SUPER_ADMIN)
-  @ApiOperation({ summary: 'Withdraw Tenant Wallet by Superadmin' })
-  withdrawTenantWallet(
-    @CurrentUser('tenant_uuid') t: string,
-    @Body() dto: { target_tenant_uuid?: string; amount: number; description?: string },
-  ) {
-    const targetUuid = dto.target_tenant_uuid || t;
-    return this.svc.withdrawTenantWallet(targetUuid, dto);
-  }
 
-  @Post('tenant/topup-request')
-  @Roles(Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN)
-  @ApiOperation({ summary: 'Request Manual Topup Tenant Wallet' })
-  createTenantTopupRequest(@CurrentUser('tenant_uuid') t: string, @Body() dto: { amount: number; proof_url?: string }) {
-    return this.svc.createTenantTopupRequest(t, dto.amount, dto.proof_url);
-  }
-
-  @Get('tenant/my-topup-requests')
-  @Roles(Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN)
-  @ApiOperation({ summary: 'Get My Tenant Topup Requests' })
-  getTenantMyTopupRequests(@CurrentUser('tenant_uuid') t: string) {
-    return this.svc.getTenantMyTopupRequests(t);
-  }
-
-  @Get('tenant/topup-requests')
-  @Roles(Role.SUPER_ADMIN)
-  @ApiOperation({ summary: 'Get All Tenant Topup Requests' })
-  getTenantTopupRequests(@Query('status') status?: string) {
-    return this.svc.getTenantTopupRequests({ status });
-  }
-
-  @Post('tenant/topup-requests/:id/approve')
-  @Roles(Role.SUPER_ADMIN)
-  @ApiOperation({ summary: 'Approve or Reject Tenant Topup Request' })
-  approveTenantTopupRequest(
-    @Param('id') id: string,
-    @Body() dto: { is_approved: boolean },
-  ) {
-    return this.svc.approveTenantTopupRequest(id, dto.is_approved);
-  }
 
   @Get('tenant/transactions')
   @Roles(Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN)
@@ -150,10 +118,10 @@ export class WalletController {
 
   @Post('tenant/withdraw-request')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN)
-  @ApiOperation({ summary: 'Request withdrawal of Tenant Wallet' })
+  @ApiOperation({ summary: 'Request withdrawal of tenant Xendit gateway funds' })
   requestTenantWithdrawal(
     @CurrentUser('tenant_uuid') t: string,
-    @Body() dto: { amount: number; bank_name: string; account_no: string; account_name: string; notes?: string },
+    @Body() dto: { amount: number; bank_channel_code?: string; bank_name: string; account_no: string; account_name: string; notes?: string },
   ) {
     return this.svc.createTenantWithdrawalRequest(t, dto);
   }
@@ -170,6 +138,46 @@ export class WalletController {
     return this.svc.getTenantWithdrawalRequests(targetUuid, status);
   }
 
+  @Post('tenant/topup')
+  @Roles(Role.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Topup tenant operational wallet manually' })
+  topupTenantWallet(
+    @Body() dto: { target_tenant_uuid: string; amount: number; description?: string }
+  ) {
+    return this.svc.topupTenantWallet(dto.target_tenant_uuid, { amount: dto.amount, description: dto.description });
+  }
+
+  @Post('tenant/withdraw')
+  @Roles(Role.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Withdraw tenant operational wallet manually' })
+  withdrawTenantWallet(
+    @Body() dto: { target_tenant_uuid: string; amount: number; description?: string }
+  ) {
+    return this.svc.withdrawTenantWallet(dto.target_tenant_uuid, { amount: dto.amount, description: dto.description });
+  }
+
+  @Get('tenant/topup-requests')
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN)
+  @ApiOperation({ summary: 'Get Tenant Topup Requests' })
+  getTenantTopupRequests(
+    @CurrentUser('tenant_uuid') t: string,
+    @CurrentUser('role') role: string,
+    @Query('status') status?: string,
+  ) {
+    const targetUuid = role === Role.SUPER_ADMIN ? undefined : t;
+    return this.svc.getTenantTopupRequests(targetUuid, status);
+  }
+
+  @Post('tenant/topup-requests/:id/approve')
+  @Roles(Role.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Approve or Reject Tenant Topup Request' })
+  approveTenantTopupRequest(
+    @Param('id') id: string,
+    @Body() dto: { is_approved: boolean },
+  ) {
+    return this.svc.approveTenantTopupRequest(id, dto.is_approved);
+  }
+
   @Post('tenant/withdraw-requests/:id/approve')
   @Roles(Role.SUPER_ADMIN)
   @ApiOperation({ summary: 'Approve or Reject Tenant Withdrawal Request' })
@@ -180,14 +188,7 @@ export class WalletController {
     return this.svc.approveTenantWithdrawalRequest(id, dto.is_approved);
   }
 
-  @Get('tenant/topup-requests/:id/invoice')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN)
-  @ApiOperation({ summary: 'View Topup Request Invoice HTML' })
-  async downloadTopupInvoice(@Param('id') id: string, @Res() res: Response) {
-    const html = await this.svc.generateTopupInvoiceHtml(id);
-    res.setHeader('Content-Type', 'text/html');
-    return res.send(html);
-  }
+
 
   @Get('tenant/withdraw-requests/:id/invoice')
   @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.FINANCE_PESANTREN)
@@ -209,4 +210,3 @@ export class WalletController {
     return this.svc.getTransactions(t, wid, p, l);
   }
 }
-

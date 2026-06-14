@@ -272,14 +272,14 @@ export class AcademicController {
   }
 
   @Post('schedules')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.ADMIN_UNIT)
   @ApiOperation({ summary: 'Create schedule' })
   createSchedule(@CurrentUser('tenant_uuid') t: string, @Body() dto: CreateScheduleDto) {
     return this.academicService.createSchedule(t, dto);
   }
 
   @Put('schedules/:id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.ADMIN_UNIT)
   @ApiOperation({ summary: 'Update schedule' })
   updateSchedule(
     @CurrentUser('tenant_uuid') t: string,
@@ -290,7 +290,7 @@ export class AcademicController {
   }
 
   @Delete('schedules/:id')
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN_PESANTREN, Role.ADMIN_UNIT)
   @ApiOperation({ summary: 'Delete schedule' })
   deleteSchedule(@CurrentUser('tenant_uuid') t: string, @Param('id') id: string) {
     return this.academicService.deleteSchedule(t, id);

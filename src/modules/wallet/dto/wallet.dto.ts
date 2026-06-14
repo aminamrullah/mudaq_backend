@@ -4,6 +4,7 @@ import {
   IsString,
   IsNumber,
   Min,
+  IsIn,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -19,6 +20,16 @@ export class TopupDto {
   @IsOptional()
   @IsString()
   payment_channel?: string;
+
+  @ApiProperty({ required: false, enum: ['cash', 'tenant_float'] })
+  @IsOptional()
+  @IsIn(['cash', 'tenant_float'])
+  source?: 'cash' | 'tenant_float';
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  description?: string;
 }
 
 export class TransferDto {

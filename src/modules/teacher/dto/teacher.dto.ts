@@ -43,6 +43,13 @@ export class CreateTeacherDto {
   @ApiProperty({ required: false }) @IsOptional() @IsString() password?: string;
   @ApiProperty({ required: false }) @IsOptional() base_salary?: number;
   @ApiProperty({ required: false }) @IsOptional() @IsString() unit_id?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() rfid?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() fingerprint_id?: string;
+  @ApiProperty({ required: false }) @IsOptional() @IsString() work_schedule_id?: string;
+  @ApiProperty({ required: false }) @IsOptional() work_attendance_rate?: number;
+  @ApiProperty({ required: false }) @IsOptional() overtime_rate?: number;
+  @ApiProperty({ required: false }) @IsOptional() teaching_attendance_rate?: number;
+  @ApiProperty({ required: false }) @IsOptional() @IsBoolean() is_work_attendance_required?: boolean;
 }
 
 export class UpdateTeacherDto extends PartialType(CreateTeacherDto) {}

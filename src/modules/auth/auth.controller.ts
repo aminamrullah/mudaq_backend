@@ -13,7 +13,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
-import { LoginDto, RegisterDto, RefreshTokenDto, RequestOtpDto, VerifyOtpDto, ResetPasswordDto } from './dto/auth.dto';
+import { LoginDto, RegisterDto, RefreshTokenDto, RequestOtpDto, VerifyOtpDto, ResetPasswordDto, RegisterWalisantriDto, LoginWalisantriDto, VerifyRegistrationOtpDto } from './dto/auth.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('auth')
@@ -152,6 +152,39 @@ export class AuthController {
     const ua = req.headers['user-agent'];
     const result = await this.authService.logout(userId, { ip, ua });
     this.clearAuthCookies(res);
+    return result;
+  }
+
+  // ── Walisantri Endpoints ──
+
+  @Post('walisantri/register')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Register new Walisantri and send OTP' })
+  async registerWalisantri(@Body() dto: RegisterWalisantriDto) {
+    return this.authService.registerWalisantri(dto);
+  }
+
+  @Post('walisantri/verify-registration')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verify Walisantri registration OTP and login' })
+  async verifyRegistrationOtp(@Body() dto: VerifyRegistrationOtpDto, @Request() req: any, @Res({ passthrough: true }) res: express.Response) {
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const ua = req.headers['user-agent'];
+    const result = await this.authService.verifyRegistrationOtp(dto, { ip, ua });
+    this.setAuthCookies(res, result.access_token, result.refresh_token);
+    return result;
+  }
+
+  @Post('walisantri/login')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Login Walisantri via password' })
+  async loginWalisantri(@Body() dto: LoginWalisantriDto, @Request() req: any, @Res({ passthrough: true }) res: express.Response) {
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const ua = req.headers['user-agent'];
+    const result = await this.authService.loginWalisantri(dto, { ip, ua });
+    this.setAuthCookies(res, result.access_token, result.refresh_token);
     return result;
   }
 }

@@ -18,7 +18,7 @@ export class TeacherService {
   ) {}
 
   async create(tenantUuid: string, dto: CreateTeacherDto) {
-    const { email, password, base_salary, ...teacherData } = dto;
+    const { email, password, base_salary, work_schedule_id, work_attendance_rate, overtime_rate, is_work_attendance_required, teaching_attendance_rate, ...teacherData } = dto;
 
     // --- Duplicate Check Across Units ---
     const duplicateConditions: any[] = [];
@@ -62,6 +62,10 @@ export class TeacherService {
             role: Role.USTAD,
             base_salary: dto.base_salary ? new Prisma.Decimal(dto.base_salary) : undefined,
             unit_id: this.cls.get('unit_id') || undefined,
+            work_schedule_id: work_schedule_id || null,
+            work_attendance_rate: work_attendance_rate !== undefined ? new Prisma.Decimal(work_attendance_rate) : undefined,
+            overtime_rate: overtime_rate !== undefined ? new Prisma.Decimal(overtime_rate) : undefined,
+            is_work_attendance_required: is_work_attendance_required !== undefined ? is_work_attendance_required : undefined,
           },
         });
         userId = user.id;
@@ -74,19 +78,22 @@ export class TeacherService {
           unit_id: this.cls.get('unit_id') || undefined,
           user_id: userId,
           birth_date: dto.birth_date ? new Date(dto.birth_date) : undefined,
+          teaching_attendance_rate: teaching_attendance_rate !== undefined ? new Prisma.Decimal(teaching_attendance_rate) : undefined,
         },
       });
     });
   }
 
-  async findAll(tenantUuid: string, page = 1, limit = 20, search?: string) {
+  async findAll(tenantUuid: string, page = 1, limit = 20, search?: string, unitIdParam?: string) {
     const where: any = { tenant_uuid: tenantUuid, deleted_at: null };
     
-    const unitId = this.cls.get('unit_id');
-    if (unitId) {
+    const clsUnitId = this.cls.get('unit_id');
+    const effectiveUnitId = clsUnitId || unitIdParam;
+
+    if (effectiveUnitId) {
       where.OR = [
-        { unit_id: unitId },
-        { assigned_units: { some: { unit_id: unitId } } }
+        { unit_id: effectiveUnitId },
+        { assigned_units: { some: { unit_id: effectiveUnitId } } }
       ];
     }
 
@@ -146,7 +153,12 @@ export class TeacherService {
 
   async update(tenantUuid: string, id: string, dto: UpdateTeacherDto) {
     const teacher = await this.findOne(tenantUuid, id);
-    const { base_salary, email, password, ...teacherData } = dto;
+    const { base_salary, email, password, user_id, unit_id, work_schedule_id, work_attendance_rate, overtime_rate, is_work_attendance_required, teaching_attendance_rate, ...teacherData } = dto;
+
+    const filteredTeacherData: any = { ...teacherData };
+    if (!unit_id) filteredTeacherData.unit_id = null;
+    if (user_id === undefined) delete filteredTeacherData.user_id;
+    if (teaching_attendance_rate !== undefined) filteredTeacherData.teaching_attendance_rate = new Prisma.Decimal(teaching_attendance_rate);
 
     return this.prisma.$transaction(async (tx) => {
       if (teacher.user_id) {
@@ -154,6 +166,10 @@ export class TeacherService {
         if (base_salary !== undefined) {
           userUpdateData.base_salary = new Prisma.Decimal(base_salary);
         }
+        if (work_schedule_id !== undefined) userUpdateData.work_schedule_id = work_schedule_id || null;
+        if (work_attendance_rate !== undefined) userUpdateData.work_attendance_rate = new Prisma.Decimal(work_attendance_rate);
+        if (overtime_rate !== undefined) userUpdateData.overtime_rate = new Prisma.Decimal(overtime_rate);
+        if (is_work_attendance_required !== undefined) userUpdateData.is_work_attendance_required = is_work_attendance_required;
         if (email) {
           const existing = await tx.user.findFirst({
             where: { email, NOT: { id: teacher.user_id } },
@@ -184,6 +200,10 @@ export class TeacherService {
             password: await bcrypt.hash(password, 12),
             role: Role.USTAD,
             base_salary: base_salary ? new Prisma.Decimal(base_salary) : undefined,
+            work_schedule_id: work_schedule_id || null,
+            work_attendance_rate: work_attendance_rate !== undefined ? new Prisma.Decimal(work_attendance_rate) : undefined,
+            overtime_rate: overtime_rate !== undefined ? new Prisma.Decimal(overtime_rate) : undefined,
+            is_work_attendance_required: is_work_attendance_required !== undefined ? is_work_attendance_required : undefined,
           },
         });
         await tx.teacher.update({
@@ -195,7 +215,7 @@ export class TeacherService {
       return tx.teacher.update({
         where: { id },
         data: {
-          ...teacherData,
+          ...filteredTeacherData,
           birth_date: dto.birth_date ? new Date(dto.birth_date) : undefined,
         },
       });
@@ -244,6 +264,15 @@ export class TeacherService {
         },
       });
     });
+  }
+
+  async getAdminPhone(tenantUuid: string) {
+    const admin = await this.prisma.user.findFirst({
+      where: { tenant_uuid: tenantUuid, role: 'ADMIN_PESANTREN', deleted_at: null },
+      select: { phone: true, name: true }
+    });
+    if (!admin) throw new NotFoundException('Admin tidak ditemukan');
+    return admin;
   }
 
   async getProfile(tenantUuid: string, userId: string) {

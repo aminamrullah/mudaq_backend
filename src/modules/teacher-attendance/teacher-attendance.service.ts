@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CreateTeacherAttendanceDto, BulkTeacherAttendanceDto } from './dto/teacher-attendance.dto';
+import { CreateTeacherAttendanceDto, BulkTeacherAttendanceDto, TeacherLeaveDto } from './dto/teacher-attendance.dto';
 import { FaceRecognitionService } from './face-recognition.service';
 
 @Injectable()
@@ -76,6 +76,65 @@ export class TeacherAttendanceService {
     return results;
   }
 
+  async requestLeave(tenant_uuid: string, user_id: string, dto: TeacherLeaveDto) {
+    const teacher = await this.prisma.teacher.findFirst({
+      where: { user_id, tenant_uuid }
+    });
+    if (!teacher) throw new BadRequestException('Akun guru tidak ditemukan');
+
+    const schedule = await this.prisma.schedule.findFirst({
+      where: { id: dto.schedule_id, tenant_uuid }
+    });
+    if (!schedule) throw new BadRequestException('Jadwal tidak ditemukan');
+
+    // Create or update attendance to izin
+    const existing = await this.prisma.teacherAttendance.findFirst({
+      where: {
+        tenant_uuid,
+        teacher_id: teacher.id,
+        date: new Date(dto.date),
+        schedule_id: dto.schedule_id,
+      },
+    });
+
+    if (existing) {
+      await this.prisma.teacherAttendance.update({
+        where: { id: existing.id },
+        data: {
+          status: 'izin',
+          notes: dto.notes ?? existing.notes,
+        },
+      });
+    } else {
+      await this.prisma.teacherAttendance.create({
+        data: {
+          tenant_uuid,
+          teacher_id: teacher.id,
+          schedule_id: dto.schedule_id,
+          date: new Date(dto.date),
+          status: 'izin',
+          notes: dto.notes,
+        },
+      });
+    }
+
+    const adminUser = await this.prisma.user.findFirst({
+      where: { tenant_uuid, role: 'ADMIN_PESANTREN' },
+      select: { phone: true }
+    });
+
+    const tenant = await this.prisma.pesantren.findFirst({
+      where: { id: tenant_uuid },
+      select: { name: true }
+    });
+
+    return {
+      message: 'Izin berhasil diajukan',
+      admin_phone: adminUser?.phone || '',
+      tenant_name: tenant?.name || ''
+    };
+  }
+
   async findByDate(tenant_uuid: string, date: string) {
     return this.prisma.teacherAttendance.findMany({
       where: {
@@ -134,7 +193,7 @@ export class TeacherAttendanceService {
     return { has_checked_in: !!existing };
   }
 
-  async checkIn(tenant_uuid: string, user_id: string, schedule_id: string, date: string, timestamp: string, image_base64?: string) {
+  async checkIn(tenant_uuid: string, user_id: string, schedule_id: string, date: string, timestamp: string, image_base64?: string, latitude?: number, longitude?: number) {
     const teacher = await this.prisma.teacher.findFirst({
       where: { user_id }
     });
@@ -214,6 +273,9 @@ export class TeacherAttendanceService {
         status: 'hadir',
         check_in: checkInTime,
         notes: notes || null,
+        latitude,
+        longitude,
+        face_image: image_base64,
       },
       create: {
         tenant_uuid,
@@ -223,6 +285,9 @@ export class TeacherAttendanceService {
         status: 'hadir',
         check_in: checkInTime,
         notes: notes || null,
+        latitude,
+        longitude,
+        face_image: image_base64,
       },
     });
   }

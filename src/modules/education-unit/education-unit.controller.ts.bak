@@ -1,14 +1,14 @@
-﻿import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@nestjs/common';
 import { EducationUnitService } from './education-unit.service';
 import { CreateEducationUnitDto, UpdateEducationUnitDto } from './dto/education-unit.dto';
 import { AuthGuard } from '@nestjs/passport';
+import { TenantGuard } from '../../common/guards/tenant.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { Role } from '@prisma/client';
 
 @Controller('education-units')
-@UseGuards(AuthGuard('jwt'), RolesGuard)
+@UseGuards(AuthGuard('jwt'), TenantGuard, RolesGuard)
 export class EducationUnitController {
   constructor(private readonly educationUnitService: EducationUnitService) {}
 
@@ -22,30 +22,6 @@ export class EducationUnitController {
   @Roles('ADMIN_PESANTREN', 'SUPER_ADMIN', 'ADMIN_UNIT', 'STAFF_PESANTREN')
   findAll(@CurrentUser('tenant_uuid') tenantUuid: string) {
     return this.educationUnitService.findAll(tenantUuid);
-  }
-
-  @Get('all')
-  @Roles(Role.SUPER_ADMIN)
-  findAllCrossTenant(
-    @Query('page') page?: number,
-    @Query('limit') limit?: number,
-    @Query('search') search?: string,
-    @Query('tenant_uuid') tenantUuid?: string,
-  ) {
-    if (tenantUuid) {
-      return this.educationUnitService.findAll(tenantUuid);
-    }
-    return this.educationUnitService.findAllCrossTenant(
-      Number(page) || 1,
-      Number(limit) || 20,
-      search
-    );
-  }
-
-  @Get('central-report')
-  @Roles(Role.SUPER_ADMIN)
-  getCentralReport(@Query('tenant_uuid') tenantUuid?: string) {
-    return this.educationUnitService.getCentralReport(tenantUuid);
   }
 
   @Get(':id')

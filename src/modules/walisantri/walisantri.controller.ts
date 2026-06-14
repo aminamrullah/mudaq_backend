@@ -79,8 +79,10 @@ export class WalisantriController {
     @CurrentUser('phone') phone: string,
     @Param('studentId') studentId: string,
     @Query('month') month?: string,
+    @Query('date') date?: string,
+    @Query('sort') sort?: 'asc' | 'desc',
   ) {
-    return this.svc.getAttendance(t, phone, studentId, month);
+    return this.svc.getAttendance(t, phone, studentId, month, date, sort);
   }
 
   @Get('students/:studentId/shalat-attendance')
@@ -91,8 +93,10 @@ export class WalisantriController {
     @CurrentUser('phone') phone: string,
     @Param('studentId') studentId: string,
     @Query('month') month?: string,
+    @Query('date') date?: string,
+    @Query('sort') sort?: 'asc' | 'desc',
   ) {
-    return this.svc.getShalatAttendance(t, phone, studentId, month);
+    return this.svc.getShalatAttendance(t, phone, studentId, month, date, sort);
   }
 
   // ── Tahfidz ──

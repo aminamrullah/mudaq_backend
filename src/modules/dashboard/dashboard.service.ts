@@ -94,6 +94,7 @@ export class DashboardService {
       totalDormitories,
       unpaidBills,
       totalWalletBalance,
+      totalUserWalletBalance,
       todayAttendance,
       todayTeacherAttendance,
       recentBills,
@@ -107,6 +108,7 @@ export class DashboardService {
       tenantInfo,
       pendingPermissionsCount,
       tenantWallet,
+      totalManualIncome,
     ] = await Promise.all([
       this.getUniqueStudentCount(tenantUuid, unitFilter),
       this.getUniqueStudentCount(tenantUuid, unitFilter, { in: ['AKTIF', 'active'] }),
@@ -126,6 +128,13 @@ export class DashboardService {
         where: {
           tenant_uuid: tenantUuid,
           student: { deleted_at: null }
+        },
+        _sum: { balance: true },
+      }),
+      this.prisma.userWallet.aggregate({
+        where: {
+          tenant_uuid: tenantUuid,
+          user: { deleted_at: null }
         },
         _sum: { balance: true },
       }),
@@ -201,7 +210,7 @@ export class DashboardService {
       }),
       this.prisma.pesantren.findUnique({
         where: { id: tenantUuid },
-        select: { max_students: true, slug: true, ppdb_is_active: true, name: true, logo: true, description: true, addon_koperasi: true, addon_inventaris: true, storage_limit: true, storage_used: true }
+        select: { max_students: true, slug: true, ppdb_is_active: true, name: true, logo: true, addon_koperasi: true, addon_inventaris: true, storage_limit: true, storage_used: true, xendit_sub_account_id: true }
       }),
       this.prisma.studentPermission.count({
         where: { tenant_uuid: tenantUuid, status: 'pending', ...studentUnitFilter }
@@ -209,6 +218,30 @@ export class DashboardService {
       this.prisma.tenantWallet.findUnique({
         where: { tenant_uuid: tenantUuid }
       }),
+      this.prisma.income.aggregate({
+        where: { tenant_uuid: tenantUuid, ...dateFilter },
+        _sum: { amount: true },
+      }),
+    ]);
+
+    const [cashIn, staffCashIn, cashOut, staffCashOut, gatewayBalance] = await Promise.all([
+      this.prisma.tenantWalletTransaction.aggregate({
+        where: { tenant_uuid: tenantUuid, type: 'cash_student_topup' },
+        _sum: { amount: true },
+      }),
+      this.prisma.tenantWalletTransaction.aggregate({
+        where: { tenant_uuid: tenantUuid, type: 'user_cash_topup' },
+        _sum: { amount: true },
+      }),
+      this.prisma.tenantWalletTransaction.aggregate({
+        where: { tenant_uuid: tenantUuid, type: 'cash_student_withdrawal' },
+        _sum: { amount: true },
+      }),
+      this.prisma.tenantWalletTransaction.aggregate({
+        where: { tenant_uuid: tenantUuid, type: 'user_cash_withdrawal' },
+        _sum: { amount: true },
+      }),
+      this.xenditService.getBalanceForSubAccount(tenantInfo?.xendit_sub_account_id),
     ]);
 
     // Koperasi Aggregates
@@ -261,11 +294,23 @@ export class DashboardService {
       teacherAttendanceMap[a.status] = (a as any)._count._all || 0;
     });
 
-    const incomeSum = Number(totalIncome._sum.net_amount || totalIncome._sum.amount_paid || 0);
+    const incomeSum = Number(totalIncome._sum.net_amount || totalIncome._sum.amount_paid || 0) + Number(totalManualIncome._sum.amount || 0);
     const donationIncomeSum = Number(totalDonationIncome._sum.net_amount || totalDonationIncome._sum.amount_paid || 0);
     const expenseSum = Number(totalExpenditure._sum.amount || 0);
     const payrollSum = Number(totalPayroll._sum.total_amount || 0);
     const disbursementSum = Number(totalDisbursement._sum.amount || 0);
+    const cashInAmount = Number(cashIn._sum.amount || 0) + Number(staffCashIn._sum.amount || 0);
+    const cashOutAmount = Number(cashOut._sum.amount || 0) + Number(staffCashOut._sum.amount || 0);
+    const gatewayAvailable = Number(
+      (gatewayBalance as any).available_balance ??
+        (gatewayBalance as any).balance ??
+        0,
+    );
+    const tenantFloat = Number(tenantWallet?.balance || 0);
+    const studentWalletLiability = Number(totalWalletBalance._sum.balance || 0);
+    const staffWalletLiability = Number(totalUserWalletBalance._sum.balance || 0);
+    const userWalletLiability = studentWalletLiability + staffWalletLiability;
+    const cashOnHandEstimate = cashInAmount - cashOutAmount;
 
     return {
       students: { 
@@ -278,7 +323,10 @@ export class DashboardService {
       dormitories: totalDormitories,
       permissions: { pending_count: pendingPermissionsCount },
       billing: { unpaid_bills: unpaidBills },
-      wallet: { total_balance: totalWalletBalance._sum.balance || 0 },
+      wallet: {
+        total_balance: totalWalletBalance._sum.balance || 0,
+        staff_total_balance: totalUserWalletBalance._sum.balance || 0,
+      },
       attendance_today: attendanceMap,
       teacher_attendance_today: teacherAttendanceMap,
       recent_bills: recentBills,
@@ -305,12 +353,25 @@ export class DashboardService {
       inventaris: {
         is_active: tenantInfo?.addon_inventaris || false,
       },
-      pesantren_slug: tenantInfo?.slug,
+pesantren_slug: tenantInfo?.slug,
       pesantren_name: tenantInfo?.name,
       pesantren_logo: tenantInfo?.logo,
-      pesantren_description: tenantInfo?.description,
       ppdb_is_active: tenantInfo?.ppdb_is_active || false,
-      tenant_wallet_balance: Number(tenantWallet?.balance || 0),
+      tenant_wallet_balance: tenantFloat,
+      gateway_finance: {
+        xendit_balance: gatewayAvailable,
+        tenant_float: tenantFloat,
+        user_wallet_liability: userWalletLiability,
+        student_wallet_liability: studentWalletLiability,
+        staff_wallet_liability: staffWalletLiability,
+        cash_in: cashInAmount,
+        cash_out: cashOutAmount,
+        cash_on_hand_estimate: cashOnHandEstimate,
+        backed_by_gateway_and_cash: gatewayAvailable + cashOnHandEstimate,
+        internal_liability: tenantFloat + userWalletLiability,
+        difference: gatewayAvailable + cashOnHandEstimate - (tenantFloat + userWalletLiability),
+        xendit_configured: !!tenantInfo?.xendit_sub_account_id,
+      },
       storage: {
         limit: tenantInfo?.storage_limit || 5368709120,
         used: tenantInfo?.storage_used || 0,
@@ -447,7 +508,8 @@ export class DashboardService {
       },
     });
 
-    // Calculate Gross & Net Income
+    // Calculate platform income. Xendit fee is tracked separately as gateway cost,
+    // because split fees now store only Mudaq's platform revenue in platform_fee.
     const txPlatformFee = Number(transactionStats._sum.platform_fee || 0);
     const txXenditFee = Number(transactionStats._sum.xendit_fee || 0);
     const topupPlatformFee = Number(topupStats._sum.platform_fee || 0);
@@ -455,7 +517,7 @@ export class DashboardService {
 
     const grossIncome = txPlatformFee + topupPlatformFee;
     const totalXenditFee = txXenditFee + topupXenditFee;
-    const netIncome = grossIncome - totalXenditFee;
+    const netIncome = grossIncome;
 
     // 4. Get recent transactions related to payment gateway
     const recentTransactions = await this.prisma.transaction.findMany({
@@ -485,13 +547,13 @@ export class DashboardService {
         transactions: {
           platform_fee: txPlatformFee,
           xendit_fee: txXenditFee,
-          net: txPlatformFee - txXenditFee,
+          net: txPlatformFee,
           total_volume: Number(transactionStats._sum.amount_paid || 0),
         },
         topups: {
           platform_fee: topupPlatformFee,
           xendit_fee: topupXenditFee,
-          net: topupPlatformFee - topupXenditFee,
+          net: topupPlatformFee,
           total_volume: Number(topupStats._sum.amount || 0),
         },
       },
@@ -502,7 +564,7 @@ export class DashboardService {
         amount: Number(t.amount_paid),
         platform_fee: Number(t.platform_fee),
         xendit_fee: Number(t.xendit_fee),
-        net: Number(t.platform_fee) - Number(t.xendit_fee),
+        net: Number(t.platform_fee),
         date: t.payment_date,
         status: t.status,
       })),
@@ -513,7 +575,7 @@ export class DashboardService {
         amount: Number(t.amount),
         platform_fee: Number(t.platform_fee),
         xendit_fee: Number(t.xendit_fee),
-        net: Number(t.platform_fee) - Number(t.xendit_fee),
+        net: Number(t.platform_fee),
         date: t.created_at,
         status: t.status,
       })),

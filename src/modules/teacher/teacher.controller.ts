@@ -41,8 +41,9 @@ export class TeacherController {
     @Query('page') p?: number,
     @Query('limit') l?: number,
     @Query('search') s?: string,
+    @Query('unit_id') unitId?: string,
   ) {
-    return this.svc.findAll(t, p, l, s);
+    return this.svc.findAll(t, p, l, s, unitId);
   }
 
   @Get('search-global')
@@ -72,6 +73,12 @@ export class TeacherController {
     @CurrentUser('id') userId: string,
   ) {
     return this.svc.getProfile(t, userId);
+  }
+
+  @Get('profile/admin-phone')
+  @ApiOperation({ summary: 'Get pesantren admin phone number' })
+  async getAdminPhone(@CurrentUser('tenant_uuid') t: string) {
+    return this.svc.getAdminPhone(t);
   }
 
   @Put('profile')

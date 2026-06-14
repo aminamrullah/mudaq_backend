@@ -269,6 +269,7 @@ export class StudentService {
     entry_year?: string,
     sort?: string,
     order?: string,
+    unitIdParam?: string,
   ) {
     const sanitizeUuid = (val: any) => {
       if (val === 'undefined' || val === 'null' || val === '') return undefined;
@@ -305,10 +306,11 @@ export class StudentService {
     if (kitab_teacher_id) where.kitab_teacher_id = kitab_teacher_id;
     if (entry_year) where.entry_year = parseInt(entry_year);
 
-    // ADMIN_UNIT: only see students in their own unit
-    const unitId = this.cls.get('unit_id');
-    if (unitId) {
-      where.unit_id = unitId;
+    // ADMIN_UNIT: only see students in their own unit, or filter by param if ADMIN_PESANTREN
+    const clsUnitId = this.cls.get('unit_id');
+    const effectiveUnitId = clsUnitId || unitIdParam;
+    if (effectiveUnitId) {
+      where.unit_id = effectiveUnitId;
     }
 
     const orderByClause: any = {};
